@@ -30,6 +30,10 @@ struct TourContainerView: View {
         allVisits.filter { $0.monumentId == session.installed.package.monument.id }
     }
 
+    private var totalNuggets: Int {
+        session.installed.package.checkpoints.reduce(0) { $0 + $1.nuggets.count }
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             Group {
@@ -45,6 +49,7 @@ struct TourContainerView: View {
             tourBar
         }
         .ignoresSafeArea(edges: .bottom)
+        .safeAreaInset(edge: .top, spacing: 0) { tripProgress }
         .navigationTitle(session.installed.package.monument.name.v(session.language))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
@@ -64,6 +69,32 @@ struct TourContainerView: View {
                 withAnimation { session.select(checkpoint: checkpoint) }
             }
         }
+    }
+
+    private var tripProgress: some View {
+        let completed = min(visits.count, totalNuggets)
+        let progress = totalNuggets == 0 ? 0 : Double(completed) / Double(totalNuggets)
+
+        return VStack(spacing: 8) {
+            HStack {
+                Label("TRIP PROGRESS", systemImage: "figure.walk")
+                    .font(.caption.bold()).tracking(0.8)
+                    .foregroundStyle(Theme.primary)
+                Spacer()
+                Text("\(completed) of \(totalNuggets) secrets - \(Int(progress * 100))%")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.mutedInk)
+            }
+            ProgressView(value: progress)
+                .tint(Theme.gold)
+                .scaleEffect(y: 1.6)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 12)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .bottom) { Divider().opacity(0.45) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Trip progress")
+        .accessibilityValue("\(completed) of \(totalNuggets) secrets discovered, \(Int(progress * 100)) percent")
     }
 
     private var tourBar: some View {
