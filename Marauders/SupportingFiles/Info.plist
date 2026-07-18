@@ -20,19 +20,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>MaraudersAPIBaseURL</key>
-	<string>$(MARAUDERS_API_BASE_URL)</string>
 	<key>MaraudersAppKey</key>
 	<string>$(MARAUDERS_APP_KEY)</string>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Marauders uses the camera to recognize offline monument tour targets.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Marauders connects to the tour guide backend on your local network for live questions.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Marauders uses your location to show nearby events and select outdoor tour checkpoints.</string>
 	<key>NSMicrophoneUsageDescription</key>

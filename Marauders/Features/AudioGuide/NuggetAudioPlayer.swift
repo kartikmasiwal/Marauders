@@ -29,10 +29,13 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
     private var progressTimer: Timer?
     private var pendingNuggetID: String?
     private var activeNuggetID: String?
+    private var currentPlaybackID: String?
 
     func targetFound(nugget: Nugget, language: String, directory: URL) {
-        exitTask?.cancel()
-        if activeNuggetID == nugget.id, player != nil {
+        if activeNuggetID == nugget.id, let player {
+            exitTask?.cancel()
+            exitTask = nil
+            if !player.isPlaying { isPlaying = player.play() }
             state = .playing(nugget.id)
             return
         }
@@ -46,6 +49,7 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
         enterTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(AudioTiming.enterHold))
             guard !Task.isCancelled else { return }
+            guard self?.pendingNuggetID == nugget.id else { return }
             self?.start(nugget: nugget, language: language, directory: directory)
         }
     }
@@ -53,32 +57,63 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
     func targetLost(nuggetID: String) {
         if pendingNuggetID == nuggetID {
             enterTask?.cancel()
+            enterTask = nil
             pendingNuggetID = nil
-            if !isPlaying { state = .idle }
+            state = isPlaying ? .playing(currentPlaybackID ?? nuggetID) : .idle
         }
-        guard case .playing(let playingID) = state, playingID == nuggetID else { return }
+        guard activeNuggetID == nuggetID else { return }
         let exitedAt = Date()
         state = .exiting(exitedAt)
         exitTask?.cancel()
         exitTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(AudioTiming.exitHold))
             guard !Task.isCancelled else { return }
+            guard self?.activeNuggetID == nuggetID else { return }
             self?.stop(fadeDuration: AudioTiming.fadeOut)
         }
     }
 
     func replay(nugget: Nugget, language: String, directory: URL) {
         enterTask?.cancel()
+        enterTask = nil
         exitTask?.cancel()
+        exitTask = nil
+        pendingNuggetID = nil
         start(nugget: nugget, language: language, directory: directory)
+    }
+
+    @discardableResult
+    func playIntro(checkpoint: Checkpoint, language: String, directory: URL) -> Bool {
+        let path = checkpoint.introAudio.v(language)
+        guard !path.isEmpty else { return false }
+        let url = directory.appendingPathComponent(path)
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        enterTask?.cancel()
+        enterTask = nil
+        exitTask?.cancel()
+        exitTask = nil
+        pendingNuggetID = nil
+        return startAudio(url: url, playbackID: "intro:\(checkpoint.id)", visitedNuggetID: nil)
     }
 
     func toggle() {
         guard let player else { return }
-        if player.isPlaying { player.pause(); isPlaying = false } else { player.play(); isPlaying = true }
+        if player.isPlaying {
+            player.pause()
+            isPlaying = false
+        } else {
+            isPlaying = player.play()
+            if isPlaying, let currentPlaybackID { state = .playing(currentPlaybackID) }
+        }
     }
 
     func stop(fadeDuration: TimeInterval = 0) {
+        enterTask?.cancel()
+        enterTask = nil
+        exitTask?.cancel()
+        exitTask = nil
+        progressTimer?.invalidate()
+        progressTimer = nil
         player?.stop()
         player = nil
         isPlaying = false
@@ -86,30 +121,50 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
         state = .idle
         pendingNuggetID = nil
         activeNuggetID = nil
-        progressTimer?.invalidate()
+        currentPlaybackID = nil
     }
 
     private func start(nugget: Nugget, language: String, directory: URL) {
         guard pendingNuggetID == nil || pendingNuggetID == nugget.id else { return }
         let path = nugget.audio.v(language)
         let url = directory.appendingPathComponent(path)
+        _ = startAudio(url: url, playbackID: nugget.id, visitedNuggetID: nugget.id)
+    }
+
+    @discardableResult
+    private func startAudio(url: URL, playbackID: String, visitedNuggetID: String?) -> Bool {
+        exitTask?.cancel()
+        exitTask = nil
+        progressTimer?.invalidate()
+        player?.stop()
+        player = nil
         do {
             let next = try AVAudioPlayer(contentsOf: url)
-            player?.stop()
             player = next
             next.delegate = self
             next.prepareToPlay()
-            next.play()
-            state = .playing(nugget.id)
+            guard next.play() else {
+                player = nil
+                state = .idle
+                isPlaying = false
+                return false
+            }
+            state = .playing(playbackID)
             pendingNuggetID = nil
-            activeNuggetID = nugget.id
+            activeNuggetID = visitedNuggetID
+            currentPlaybackID = playbackID
             isPlaying = true
-            onStart?(nugget.id)
+            if let visitedNuggetID { onStart?(visitedNuggetID) }
             startProgressTimer()
+            return true
         } catch {
+            player = nil
             state = .idle
             pendingNuggetID = nil
+            activeNuggetID = nil
+            currentPlaybackID = nil
             isPlaying = false
+            return false
         }
     }
 
@@ -124,6 +179,9 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        Task { @MainActor in self.stop() }
+        Task { @MainActor in
+            guard self.player === player else { return }
+            self.stop()
+        }
     }
 }

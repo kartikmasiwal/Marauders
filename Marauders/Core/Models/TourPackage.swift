@@ -4,6 +4,7 @@ typealias LangMap = [String: String]
 
 extension LangMap {
     func v(_ lang: String) -> String { self[lang] ?? self["en"] ?? "" }
+    func mediaPath(_ lang: String) -> String { self[lang] ?? self["en"] ?? values.first ?? "" }
 }
 
 struct TourPackage: Codable {
@@ -18,6 +19,7 @@ struct Monument: Codable {
     let name: LangMap
     let languages: [String]
     let overview: LangMap
+    let ambientTrack: String?
 }
 
 struct Routes: Codable { let monument: Route?; let venue: Route? }

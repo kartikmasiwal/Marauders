@@ -6,6 +6,7 @@ struct InteractiveMapView: View {
     let visitedNuggetIDs: Set<String>
     @Binding var selectedTab: TourContainerView.TourTab
     let onBrowse: () -> Void
+    let onSelectCheckpoint: (Checkpoint) -> Void
     @State private var scale: CGFloat = 1
     @State private var lastScale: CGFloat = 1
     @State private var offset: CGSize = .zero
@@ -328,7 +329,7 @@ struct InteractiveMapView: View {
     private func select(_ checkpoint: Checkpoint, state: CheckpointVisualState, viewport: CGSize, mapSize: CGSize) {
         guard state != .locked else { return }
         withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
-            session.select(checkpoint: checkpoint)
+            onSelectCheckpoint(checkpoint)
             isCheckpointCardPresented = true
             focus(checkpoint, viewport: viewport, mapSize: mapSize)
         }

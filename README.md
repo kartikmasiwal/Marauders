@@ -2,7 +2,7 @@
 
 Marauders is an offline-first SwiftUI monument companion that turns demo District bookings into interactive map, AR, and voice-guided tours.
 
-Built as a local-first prototype, the app requires no API keys or backend services.
+The core tour is local-first and works offline after installation. Live Q&A uses the deployed Azure backend and requires a locally supplied app key.
 
 ## Features
 
@@ -15,9 +15,10 @@ Built as a local-first prototype, the app requires no API keys or backend servic
 - Curated target-image reveal cards with shutter feedback and a live-camera thumbnail
 - Debounced offline audio playback that tolerates brief target occlusion
 - Persistent SwiftData progress for checkpoint state and secrets-found counts
-- English/Hindi package selection, on-device GPS checkpoint resolution, and live voice Q&A
+- Package-driven language selection, on-device GPS checkpoint resolution, and live voice Q&A
+- Optional ambient soundtrack with narration/Q&A ducking and checkpoint intro playback
 - Responsive native SwiftUI layouts and Dynamic Type-compatible text
-- Local mock services and data with no backend or API keys
+- Mock authentication and tickets with real packaged tour content
 
 ## Requirements
 
@@ -31,21 +32,20 @@ Built as a local-first prototype, the app requires no API keys or backend servic
 2. Use OTP `123456`.
 3. Alternatively, select **Continue with Google** to use the local demo account.
 
-Authentication, tickets, monument content, and audio-guide metadata are mock implementations suitable for demos and development.
+Authentication and tickets are mock implementations. Taj Mahal monument content and audio are loaded from the deployed backend package contract.
 
 ## Backend Configuration
 
-The app defaults to `http://127.0.0.1:8000`, which reaches a backend running on the same Mac from the simulator. For a physical iPhone, provide the Mac's LAN address and app key without committing either value:
+The app uses `https://marauders-backend.azurewebsites.net` as the single source for package downloads, health checks, and live Q&A. Supply only the app key locally:
 
 ```sh
-MARAUDERS_API_BASE_URL=http://192.168.1.10:8000 \
 MARAUDERS_APP_KEY=your-hand-carried-key \
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 xcodebuild -project Marauders.xcodeproj -scheme Marauders \
   -destination 'generic/platform=iOS' build
 ```
 
-`Secrets.xcconfig.example` documents the equivalent local Xcode values. `Secrets.xcconfig` is ignored by Git. Package and health endpoints are open; only `/ask` receives `X-App-Key`.
+`Secrets.xcconfig.example` documents the equivalent local Xcode value. `Secrets.xcconfig` is ignored by Git. Package and health endpoints are open; only `/ask` receives `X-App-Key`.
 
 ## Offline Package
 
@@ -57,7 +57,7 @@ audio/*.mp3
 targets/*.jpg
 ```
 
-The package is unzipped to Application Support and validated before the tour opens. Every checkpoint must contain a nugget and every localized audio and target path must resolve on disk. The core map, AR recognition, audio playback, and progress flow make no network calls.
+The real Azure package is bundled for first-launch offline use. Installation is atomic and upgrade-aware. Missing localized audio is filtered per nugget; nuggets with no playable audio and checkpoints with no playable nuggets are omitted instead of failing the tour. Missing AR targets fall back to Browse Mode and an image placeholder. The core map, AR recognition, audio playback, and progress flow make no network calls.
 
 ## Build
 

@@ -3,6 +3,12 @@ import Foundation
 
 @MainActor
 final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDelegate, AVAudioPlayerDelegate {
+    private struct QuestionContext {
+        let checkpointID: String
+        let monumentID: String
+        let language: String
+    }
+
     enum State: Equatable {
         case idle
         case requestingPermission
@@ -17,6 +23,8 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
 
     private var recorder: AVAudioRecorder?
     private var player: AVAudioPlayer?
+    private var questionContext: QuestionContext?
+    private var answerURL: URL?
     private let engine: any AnswerEngine
 
     var suppressesTourAudio: Bool {
@@ -32,11 +40,15 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
     }
 
     func toggleRecording(checkpointID: String, monumentID: String, language: String) {
-        if state == .recording {
-            stopAndAsk(checkpointID: checkpointID, monumentID: monumentID, language: language)
-        } else {
+        switch state {
+        case .idle, .failed:
+            questionContext = QuestionContext(checkpointID: checkpointID, monumentID: monumentID, language: language)
             state = .requestingPermission
             Task { await startRecording() }
+        case .recording:
+            stopAndAsk()
+        case .requestingPermission, .thinking, .speaking:
+            break
         }
     }
 
@@ -48,6 +60,7 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
     private func startRecording() async {
         let allowed = await AVAudioApplication.requestRecordPermission()
         guard allowed else {
+            questionContext = nil
             state = .failed("Microphone access is required to ask the guide a question.")
             return
         }
@@ -64,16 +77,24 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
             ]
             recorder = try AVAudioRecorder(url: url, settings: settings)
             recorder?.delegate = self
-            recorder?.record()
+            guard recorder?.record() == true else {
+                recorder = nil
+                questionContext = nil
+                state = .failed("The microphone could not start. Please try again.")
+                cleanupAudioSession()
+                return
+            }
             state = .recording
             answerText = nil
         } catch {
+            questionContext = nil
             state = .failed("The microphone could not start. Please try again.")
+            cleanupAudioSession()
         }
     }
 
-    private func stopAndAsk(checkpointID: String, monumentID: String, language: String) {
-        guard let recorder else { return }
+    private func stopAndAsk() {
+        guard let recorder, let context = questionContext else { return }
         recorder.stop()
         let url = recorder.url
         self.recorder = nil
@@ -83,12 +104,16 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
                 let audio = try Data(contentsOf: url).base64EncodedString()
                 let response = try await engine.answer(
                     text: nil, audioBase64: audio,
-                    checkpointId: checkpointID, monumentId: monumentID, lang: language
+                    checkpointId: context.checkpointID,
+                    monumentId: context.monumentID,
+                    lang: context.language
                 )
                 answerText = response.text
                 try play(base64: response.audioBase64)
             } catch {
+                questionContext = nil
                 state = .failed(error.localizedDescription)
+                cleanupAudioSession()
             }
             try? FileManager.default.removeItem(at: url)
         }
@@ -98,14 +123,32 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
         guard let data = Data(base64Encoded: base64) else { throw CocoaError(.fileReadCorruptFile) }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("answer-\(UUID().uuidString).mp3")
         try data.write(to: url, options: .atomic)
+        answerURL = url
         player = try AVAudioPlayer(contentsOf: url)
         player?.delegate = self
         player?.prepareToPlay()
-        player?.play()
+        guard player?.play() == true else {
+            player = nil
+            try? FileManager.default.removeItem(at: url)
+            answerURL = nil
+            throw CocoaError(.fileReadUnknown)
+        }
         state = .speaking
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        Task { @MainActor in self.state = .idle }
+        Task { @MainActor in
+            guard self.player === player else { return }
+            self.player = nil
+            if let answerURL = self.answerURL { try? FileManager.default.removeItem(at: answerURL) }
+            self.answerURL = nil
+            self.questionContext = nil
+            self.cleanupAudioSession()
+            self.state = .idle
+        }
+    }
+
+    private func cleanupAudioSession() {
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }

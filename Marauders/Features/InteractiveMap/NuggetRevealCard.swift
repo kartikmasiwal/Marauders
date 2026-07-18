@@ -32,8 +32,8 @@ struct NuggetRevealCard: View {
     }
 
     private var hero: some View {
-        Image(uiImage: UIImage(contentsOfFile: session.installed.targetURL(for: nugget).path) ?? UIImage())
-            .resizable().scaledToFill().frame(height: 310).clipped()
+        NuggetMediaView(url: session.installed.targetURL(for: nugget))
+            .frame(height: 310).clipped()
             .overlay {
                 LinearGradient(
                     colors: [.clear, Theme.goldLight.opacity(0.72), .white.opacity(0.8), .clear],
@@ -57,5 +57,24 @@ struct NuggetRevealCard: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         .padding(28)
         .accessibilityIdentifier("closeNuggetReveal")
+    }
+}
+
+struct NuggetMediaView: View {
+    let url: URL
+
+    var body: some View {
+        Group {
+            if let image = UIImage(contentsOfFile: url.path) {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                ZStack {
+                    Theme.surfaceContainer
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 42)).foregroundStyle(Theme.outline)
+                }
+            }
+        }
+        .accessibilityHidden(true)
     }
 }

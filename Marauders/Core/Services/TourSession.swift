@@ -23,6 +23,7 @@ final class TourSession: ObservableObject {
     }
 
     func select(checkpoint: Checkpoint, nugget: Nugget? = nil) {
+        if nugget == nil, checkpoint.id != currentCheckpointID { activeNuggetID = nil }
         currentCheckpointID = checkpoint.id
         if let nugget { activeNuggetID = nugget.id }
     }

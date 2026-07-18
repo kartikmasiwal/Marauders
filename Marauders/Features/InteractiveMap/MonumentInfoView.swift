@@ -4,6 +4,7 @@ struct MonumentInfoView: View {
     @ObservedObject var session: TourSession
     @ObservedObject var audioPlayer: NuggetAudioPlayer
     let visitedNuggetIDs: Set<String>
+    let onSelectCheckpoint: (Checkpoint) -> Void
     @State private var selectedCheckpoint: Checkpoint?
 
     private var orderedCheckpoints: [Checkpoint] {
@@ -57,7 +58,10 @@ struct MonumentInfoView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Tour checkpoints").font(.title3.bold())
             ForEach(Array(orderedCheckpoints.enumerated()), id: \.element.id) { index, checkpoint in
-                Button { selectedCheckpoint = checkpoint } label: {
+                Button {
+                    onSelectCheckpoint(checkpoint)
+                    selectedCheckpoint = checkpoint
+                } label: {
                     HStack(spacing: 12) {
                         Text("\(checkpoint.order + 1)").font(.headline).foregroundStyle(.white).frame(width: 36, height: 36).background(Theme.primary, in: Circle())
                         VStack(alignment: .leading, spacing: 4) {
