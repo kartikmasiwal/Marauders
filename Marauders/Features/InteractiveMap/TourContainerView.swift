@@ -10,6 +10,7 @@ struct TourContainerView: View {
     @Query private var allVisits: [VisitedNugget]
     @State private var tab: TourTab = .map
     @State private var showBrowse = false
+    @State private var showGiftMessage = false
 
     enum TourTab: String, CaseIterable {
         case map = "Map"
@@ -38,6 +39,10 @@ struct TourContainerView: View {
         session.installed.package.checkpoints.reduce(0) { $0 + $1.nuggets.count }
     }
 
+    private var isJourneyComplete: Bool {
+        totalNuggets > 0 && visits.count >= totalNuggets
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             Group {
@@ -59,6 +64,11 @@ struct TourContainerView: View {
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .fullScreenCover(isPresented: $showBrowse) {
             BrowseModeView(session: session, onEngage: engage)
+        }
+        .alert(isJourneyComplete ? "Gift card unlocked" : "Gift locked", isPresented: $showGiftMessage) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(isJourneyComplete ? "Journey complete. Your gift card is ready to unlock." : "Complete the journey to unlock the gift card.")
         }
         .onAppear {
             audioPlayer.onStart = markVisited
@@ -89,16 +99,32 @@ struct TourContainerView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Theme.mutedInk)
             }
-            ProgressView(value: progress)
-                .tint(Theme.gold)
-                .scaleEffect(y: 1.6)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Trip progress")
+            .accessibilityValue("\(completed) of \(totalNuggets) secrets discovered, \(Int(progress * 100)) percent")
+
+            ZStack(alignment: .trailing) {
+                ProgressView(value: progress)
+                    .tint(Theme.gold)
+                    .scaleEffect(y: 1.6)
+                    .padding(.trailing, 16)
+                    .accessibilityHidden(true)
+                Button { showGiftMessage = true } label: {
+                    Image(systemName: isJourneyComplete ? "gift.fill" : "gift")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(isJourneyComplete ? Theme.primary : Theme.mutedInk)
+                        .frame(width: 34, height: 34)
+                        .background(isJourneyComplete ? Theme.goldLight : Theme.surfaceContainer, in: Circle())
+                        .overlay { Circle().stroke(Theme.gold.opacity(isJourneyComplete ? 0.85 : 0.35), lineWidth: 1.5) }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isJourneyComplete ? "Gift card unlocked" : "Gift card locked")
+                .accessibilityHint(isJourneyComplete ? "Shows your unlocked reward" : "Shows how to unlock the reward")
+            }
         }
         .padding(.horizontal, 20).padding(.vertical, 12)
         .background(.ultraThinMaterial)
         .overlay(alignment: .bottom) { Divider().opacity(0.45) }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Trip progress")
-        .accessibilityValue("\(completed) of \(totalNuggets) secrets discovered, \(Int(progress * 100)) percent")
     }
 
     private var tourBar: some View {
