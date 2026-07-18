@@ -2,6 +2,7 @@ import SwiftUI
 
 struct InteractiveMapView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var session: TourSession
     let visitedNuggetIDs: Set<String>
     @Binding var selectedTab: TourContainerView.TourTab
@@ -48,7 +49,7 @@ struct InteractiveMapView: View {
                 focus(checkpoint, viewport: proxy.size, mapSize: mapSize)
             }
             .onChange(of: allCheckpointsCompleted) { wasComplete, isComplete in
-                guard isZomatoJourney, !wasComplete, isComplete else { return }
+                guard isZomatoJourney, !reduceMotion, !wasComplete, isComplete else { return }
                 completionBurst = true
                 Task {
                     try? await Task.sleep(for: .seconds(1.8))
@@ -68,7 +69,7 @@ struct InteractiveMapView: View {
 
     @ViewBuilder
     private func trail(in size: CGSize) -> some View {
-        if isZomatoJourney {
+        if isZomatoJourney, !reduceMotion {
             dynamicTrail(in: size)
         } else {
             staticTrail(in: size)
@@ -89,7 +90,7 @@ struct InteractiveMapView: View {
     }
 
     private func dynamicTrail(in size: CGSize) -> some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
             let elapsed = timeline.date.timeIntervalSinceReferenceDate
             let travel = elapsed.truncatingRemainder(dividingBy: 2.4) / 2.4
             let breathe = 0.78 + 0.16 * (0.5 + 0.5 * sin(elapsed * 1.8))
@@ -135,8 +136,8 @@ struct InteractiveMapView: View {
 
     @ViewBuilder
     private func checkpoints(in size: CGSize, viewport: CGSize) -> some View {
-        if isZomatoJourney {
-            TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+        if isZomatoJourney, !reduceMotion {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
                 let pulse = timeline.date.timeIntervalSinceReferenceDate
                 checkpointLayer(in: size, viewport: viewport, pulse: pulse)
             }
@@ -185,8 +186,8 @@ struct InteractiveMapView: View {
 
     @ViewBuilder
     private func completionShimmer(in size: CGSize) -> some View {
-        if isZomatoJourney, completionBurst {
-            TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+        if isZomatoJourney, !reduceMotion, completionBurst {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
                 let progress = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.5) / 1.5
                 LinearGradient(
                     colors: [.clear, Theme.goldLight.opacity(0.15), .white.opacity(0.34), .clear],
@@ -213,7 +214,7 @@ struct InteractiveMapView: View {
                         Text("\(visitedCount(checkpoint))/\(checkpoint.nuggets.count) SECRETS")
                             .font(.caption2.bold()).foregroundStyle(Theme.teal)
                         Button {
-                            withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+                            withAnimation(reduceMotion ? nil : Motion.spring) {
                                 isCheckpointCardPresented = false
                             }
                         } label: {
@@ -223,7 +224,7 @@ struct InteractiveMapView: View {
                                 .frame(width: 30, height: 30)
                                 .background(Theme.surfaceContainer, in: Circle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(SubtlePressButtonStyle())
                         .accessibilityLabel("Close checkpoint details")
                     }
                     Text(checkpoint.name.v(session.language)).font(.title2.bold()).foregroundStyle(Theme.ink)
@@ -232,9 +233,9 @@ struct InteractiveMapView: View {
                     checkpointActions
                 }
                 .padding(18).heritageCard().padding(.horizontal, 16).padding(.bottom, 102)
-                .offset(y: isCheckpointCardPresented ? 0 : 420)
+                .offset(y: isCheckpointCardPresented || reduceMotion ? 0 : 420)
                 .opacity(isCheckpointCardPresented ? 1 : 0)
-                .scaleEffect(isCheckpointCardPresented ? 1 : 0.96, anchor: .bottom)
+                .scaleEffect(isCheckpointCardPresented || reduceMotion ? 1 : 0.96, anchor: .bottom)
                 .allowsHitTesting(isCheckpointCardPresented)
                 .accessibilityHidden(!isCheckpointCardPresented)
             }
@@ -327,7 +328,7 @@ struct InteractiveMapView: View {
 
     private func select(_ checkpoint: Checkpoint, state: CheckpointVisualState, viewport: CGSize, mapSize: CGSize) {
         guard state != .locked else { return }
-        withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+        withAnimation(reduceMotion ? nil : Motion.spring) {
             session.select(checkpoint: checkpoint)
             isCheckpointCardPresented = true
             focus(checkpoint, viewport: viewport, mapSize: mapSize)
@@ -335,7 +336,7 @@ struct InteractiveMapView: View {
     }
 
     private func zoom(_ amount: CGFloat, viewport: CGSize, mapSize: CGSize) {
-        withAnimation(.snappy) {
+        withAnimation(reduceMotion ? nil : Motion.standard) {
             scale = min(max(scale + amount, 1), 3.5)
             offset = clamped(offset, scale: scale, viewport: viewport, mapSize: mapSize)
             if scale == 1 { offset = .zero }
@@ -345,7 +346,7 @@ struct InteractiveMapView: View {
     }
 
     private func resetMap() {
-        withAnimation(.snappy) {
+        withAnimation(reduceMotion ? nil : Motion.standard) {
             scale = 1
             lastScale = 1
             offset = .zero

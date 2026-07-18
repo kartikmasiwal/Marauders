@@ -2,18 +2,19 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppSession.self) private var session
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
             if session.isAuthenticated {
                 MainTabView()
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .transition(Motion.subtleTransition(reduceMotion: reduceMotion))
             } else {
                 AuthenticationView()
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.35), value: session.isAuthenticated)
+        .animation(Motion.change(reduceMotion: reduceMotion), value: session.isAuthenticated)
         .environment(\.locale, Locale(identifier: session.appLanguage.localeIdentifier))
         .contrast(session.prefersHighContrast ? 1.18 : 1)
         .modifier(PreferredTextSizeModifier(enabled: session.prefersLargeText))

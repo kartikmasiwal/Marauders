@@ -71,8 +71,8 @@ struct ProfileView: View {
                 .background(Theme.goldLight.opacity(0.4), in: RoundedRectangle(cornerRadius: 9))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body.weight(.semibold))
-                Text(subtitle).font(.caption).foregroundStyle(Theme.mutedInk)
+                Text(LocalizedStringKey(title)).font(.body.weight(.semibold))
+                Text(LocalizedStringKey(subtitle)).font(.caption).foregroundStyle(Theme.mutedInk)
             }
         }
         .padding(.vertical, 3)
@@ -159,7 +159,7 @@ private struct AccountDetailsView: View {
                     .keyboardType(.emailAddress)
                     .accessibilityIdentifier("profileEmail")
                 Picker("Gender", selection: $gender) {
-                    ForEach(genders, id: \.self) { Text($0).tag($0) }
+                    ForEach(genders, id: \.self) { Text(LocalizedStringKey($0)).tag($0) }
                 }
                 DatePicker("Date of birth", selection: $dateOfBirth, in: ...Date(), displayedComponents: .date)
                     .accessibilityIdentifier("profileDateOfBirth")
@@ -168,7 +168,7 @@ private struct AccountDetailsView: View {
             Section("ACCESSIBILITY INFORMATION") {
                 Picker("Disability status", selection: $disabilityStatus) {
                     ForEach(DisabilityStatus.allCases) { status in
-                        Text(status.rawValue).tag(status)
+                        Text(LocalizedStringKey(status.rawValue)).tag(status)
                     }
                 }
                 VStack(alignment: .leading, spacing: 8) {
@@ -234,7 +234,7 @@ private struct LanguagePreferencesView: View {
             Section("APPLICATION LANGUAGE") {
                 Picker("Language", selection: $session.appLanguage) {
                     ForEach(AppLanguage.allCases) { language in
-                        Text(language.title).tag(language)
+                        Text(verbatim: language.title).tag(language)
                     }
                 }
                 .pickerStyle(.inline)
@@ -242,7 +242,7 @@ private struct LanguagePreferencesView: View {
             Section {
                 Label("Changes apply immediately", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(Theme.teal)
-                Text("Hindi is used where a translation is available; other text falls back to English.")
+                Text("Your selected language applies across the app. Monument content falls back to English when a translation is unavailable.")
                     .font(.caption).foregroundStyle(Theme.mutedInk)
             }
         }
