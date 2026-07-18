@@ -43,7 +43,7 @@ struct TourContainerView: View {
                 case .scan:
                     ARCameraView(session: session, audioPlayer: audioPlayer, onBrowse: { showBrowse = true })
                 case .info:
-                    MonumentInfoView(session: session, audioPlayer: audioPlayer, visitedCount: visits.count)
+                    MonumentInfoView(session: session, audioPlayer: audioPlayer, visitedNuggetIDs: Set(visits.map(\.id)))
                 }
             }
             tourBar

@@ -24,8 +24,12 @@ final class MaraudersUITests: XCTestCase {
         app.buttons["googleSignInButton"].tap()
         let prepare = app.buttons["viewTicket_taj-mahal"]
         XCTAssertTrue(prepare.waitForExistence(timeout: 5))
-        app.staticTexts["Prepare Tour"].tap()
-        XCTAssertTrue(app.staticTexts["Tour ready offline"].waitForExistence(timeout: 10))
+        prepare.tap()
+        let ready = app.staticTexts["Tour ready offline"]
+        if !ready.waitForExistence(timeout: 2), prepare.exists {
+            prepare.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(ready.waitForExistence(timeout: 10))
         app.buttons["startTourButton"].tap()
         app.tap()
         XCTAssertTrue(app.buttons["checkpoint_cp_main_gate"].waitForExistence(timeout: 5))
