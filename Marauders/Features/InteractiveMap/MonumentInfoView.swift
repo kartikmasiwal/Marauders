@@ -3,7 +3,11 @@ import SwiftUI
 struct MonumentInfoView: View {
     @ObservedObject var session: TourSession
     @ObservedObject var audioPlayer: NuggetAudioPlayer
-    let visitedCount: Int
+    let visitedNuggetIDs: Set<String>
+
+    private var orderedCheckpoints: [Checkpoint] {
+        session.installed.package.checkpoints.sorted { $0.order < $1.order }
+    }
 
     var body: some View {
         ScrollView {
@@ -19,7 +23,7 @@ struct MonumentInfoView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(session.installed.package.monument.name.v(session.language)).font(.system(size: 30, weight: .bold, design: .rounded)).foregroundStyle(Theme.primary)
             Text(session.installed.package.monument.overview.v(session.language)).foregroundStyle(Theme.mutedInk)
-            Label("\(visitedCount) of \(session.installed.package.checkpoints.flatMap(\.nuggets).count) secrets found", systemImage: "sparkles")
+            Label("\(visitedNuggetIDs.count) of \(session.installed.package.checkpoints.flatMap(\.nuggets).count) secrets found", systemImage: "sparkles")
                 .font(.subheadline.bold()).foregroundStyle(Theme.teal)
         }
     }
@@ -44,18 +48,45 @@ struct MonumentInfoView: View {
     private var checkpointList: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Tour checkpoints").font(.title3.bold())
-            ForEach(session.installed.package.checkpoints.sorted { $0.order < $1.order }) { checkpoint in
+            ForEach(Array(orderedCheckpoints.enumerated()), id: \.element.id) { index, checkpoint in
                 Button { session.select(checkpoint: checkpoint) } label: {
-                    HStack {
+                    HStack(spacing: 12) {
                         Text("\(checkpoint.order + 1)").font(.headline).foregroundStyle(.white).frame(width: 36, height: 36).background(Theme.primary, in: Circle())
-                        VStack(alignment: .leading) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text(checkpoint.name.v(session.language)).font(.headline)
-                            Text("\(checkpoint.nuggets.count) stories").font(.caption).foregroundStyle(Theme.mutedInk)
+                            Text(checkpoint.intro.v(session.language)).font(.caption).foregroundStyle(Theme.mutedInk).lineLimit(1)
                         }
                         Spacer()
+                        if let status = status(for: checkpoint, index: index) {
+                            Text(status.title.uppercased())
+                                .font(.system(size: 9, weight: .bold)).tracking(0.6)
+                                .foregroundStyle(status.color)
+                                .padding(.horizontal, 8).padding(.vertical, 5)
+                                .background(status.color.opacity(0.1), in: Capsule())
+                        }
                     }.foregroundStyle(Theme.ink).padding(12).background(Theme.surface, in: RoundedRectangle(cornerRadius: 16))
                 }
             }
         }
+    }
+
+    private func status(for checkpoint: Checkpoint, index: Int) -> CheckpointInfoStatus? {
+        if checkpoint.nuggets.allSatisfy({ visitedNuggetIDs.contains($0.id) }) { return .completed }
+        if checkpoint.id == session.currentCheckpointID { return .current }
+        guard index > 0 else { return nil }
+        let previous = orderedCheckpoints[index - 1]
+        return previous.nuggets.allSatisfy({ visitedNuggetIDs.contains($0.id) }) ? nil : .locked
+    }
+}
+
+private enum CheckpointInfoStatus {
+    case locked, current, completed
+
+    var title: String {
+        switch self { case .locked: "Locked"; case .current: "Current"; case .completed: "Completed" }
+    }
+
+    var color: Color {
+        switch self { case .locked: Theme.mutedInk; case .current: Theme.primary; case .completed: Theme.teal }
     }
 }

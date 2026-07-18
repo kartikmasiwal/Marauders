@@ -47,7 +47,6 @@ private struct TourTicketCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(booking.name).font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(Theme.ink)
                 Label(booking.city, systemImage: "mappin.and.ellipse")
-                Label(booking.date, systemImage: "calendar")
                 Divider().overlay(Theme.outline.opacity(0.6))
                 NavigationLink(value: booking) {
                     HStack { Text(booking.packageAvailable ? "Prepare Tour" : "Download Tour").fontWeight(.semibold); Spacer(); Image(systemName: "arrow.down.to.line.compact") }
