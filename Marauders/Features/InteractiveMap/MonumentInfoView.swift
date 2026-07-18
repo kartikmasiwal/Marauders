@@ -41,7 +41,7 @@ struct MonumentInfoView: View {
     }
 
     private var emptyState: some View {
-        ContentUnavailableView("No active story", systemImage: "viewfinder", description: Text("Scan a target to reveal its nugget here."))
+        ContentUnavailableView("No active story", systemImage: "viewfinder", description: Text("Use AR Exp to reveal a story here."))
             .frame(maxWidth: .infinity).padding(.vertical, 24)
     }
 
