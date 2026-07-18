@@ -13,11 +13,15 @@ struct TourContainerView: View {
 
     enum TourTab: String, CaseIterable {
         case map = "Map"
-        case scan = "Scan"
+        case scan = "AR Exp"
         case info = "Info"
 
         var icon: String {
             switch self { case .map: "map.fill"; case .scan: "viewfinder"; case .info: "info.circle.fill" }
+        }
+
+        var accessibilityID: String {
+            switch self { case .map: "map"; case .scan: "scan"; case .info: "info" }
         }
     }
 
@@ -109,7 +113,7 @@ struct TourContainerView: View {
                     .frame(maxWidth: .infinity).padding(.vertical, 9)
                     .background(tab == item ? Theme.goldLight.opacity(0.28) : .clear, in: Capsule())
                 }
-                .accessibilityIdentifier("tourTab_\(item.rawValue.lowercased())")
+                .accessibilityIdentifier("tourTab_\(item.accessibilityID)")
             }
         }
         .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 24)
