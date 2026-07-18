@@ -60,8 +60,8 @@ struct BrowseModeView: View {
             withAnimation(.snappy) { revealedNugget = nugget }
         } label: {
             HStack(spacing: 14) {
-                Image(uiImage: UIImage(contentsOfFile: session.installed.targetURL(for: nugget).path) ?? UIImage())
-                    .resizable().scaledToFill().frame(width: 88, height: 88).clipped()
+                NuggetMediaView(url: session.installed.targetURL(for: nugget))
+                    .frame(width: 88, height: 88).clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 16)).allowsHitTesting(false)
                 VStack(alignment: .leading, spacing: 7) {
                     if nugget.exclusive { Text("★ EXCLUSIVE").font(.caption2.bold()).tracking(0.8).foregroundStyle(Theme.gold) }

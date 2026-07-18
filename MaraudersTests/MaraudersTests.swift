@@ -5,11 +5,16 @@ import Testing
 struct MaraudersTests {
     @Test @MainActor func bundledPackageInstallsAndValidates() async throws {
         let store = PackageStore()
+        try? store.remove(monumentID: "taj_mahal")
         let installed = try await store.prepare(monumentID: "taj_mahal", preferBundled: true)
 
         #expect(installed.package.schemaVersion == 1)
         #expect(installed.package.monument.id == "taj_mahal")
-        #expect(installed.package.checkpoints.count == 3)
+        #expect(installed.package.checkpoints.count == 4)
+        #expect(installed.package.checkpoints.allSatisfy { !$0.venue })
+        #expect(installed.package.routes?.venue == nil)
+        #expect(installed.package.monument.languages.contains("en"))
+        #expect(installed.package.monument.languages.contains("hi"))
         for checkpoint in installed.package.checkpoints {
             for path in checkpoint.introAudio.values {
                 #expect(FileManager.default.fileExists(atPath: installed.fileURL(for: path).path))
@@ -21,10 +26,65 @@ struct MaraudersTests {
         }
     }
 
+    @Test @MainActor func partialPackageDropsOnlyUnplayableContent() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("partial-tour-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("audio"), withIntermediateDirectories: true)
+        try Data([0x00]).write(to: root.appendingPathComponent("audio/playable_en.mp3"))
+        let json = """
+        {
+          "schemaVersion": 1,
+          "monument": {
+            "id": "partial",
+            "name": {"en": "Partial Tour"},
+            "languages": ["en", "hi"],
+            "overview": {"en": "A partial package"}
+          },
+          "routes": null,
+          "checkpoints": [
+            {
+              "id": "playable", "order": 0, "name": {"en": "Playable"},
+              "mapPosition": {"x": 0.2, "y": 0.3}, "gps": null, "venue": false,
+              "intro": {"en": "Playable intro"},
+              "introAudio": {"en": "audio/missing_intro.mp3"},
+              "nuggets": [{
+                "id": "usable", "title": {"en": "Usable"}, "targetImageId": "missing_target",
+                "exclusive": false, "text": {"en": "Still available in Browse Mode"},
+                "audio": {"en": "audio/playable_en.mp3", "hi": "audio/missing_hi.mp3"}
+              }]
+            },
+            {
+              "id": "placeholder", "order": 1, "name": {"en": "Placeholder"},
+              "mapPosition": {"x": 0.8, "y": 0.8}, "gps": null, "venue": true,
+              "intro": {"en": "Placeholder"}, "introAudio": {},
+              "nuggets": [{
+                "id": "unusable", "title": {"en": "Unusable"}, "targetImageId": "none",
+                "exclusive": false, "text": {"en": "No audio"},
+                "audio": {"en": "audio/missing.mp3"}
+              }]
+            }
+          ]
+        }
+        """
+        try Data(json.utf8).write(to: root.appendingPathComponent("tour.json"))
+
+        let installed = try PackageStore().decodeAndValidate(directory: root)
+        #expect(installed.package.checkpoints.map(\.id) == ["playable"])
+        #expect(installed.package.checkpoints[0].introAudio.isEmpty)
+        #expect(installed.package.checkpoints[0].nuggets[0].audio == ["en": "audio/playable_en.mp3"])
+        #expect(!FileManager.default.fileExists(atPath: installed.targetURL(for: installed.package.checkpoints[0].nuggets[0]).path))
+    }
+
     @Test func languageFallbackUsesEnglish() {
         let values: LangMap = ["en": "Gateway", "hi": "द्वार"]
         #expect(values.v("hi") == "द्वार")
         #expect(values.v("fr") == "Gateway")
+        #expect((["hi": "audio_hi.mp3"] as LangMap).mediaPath("fr") == "audio_hi.mp3")
+    }
+
+    @Test func apiUsesAzureAsSingleSource() {
+        #expect(API.base == API.azureBase)
+        #expect(API.base.absoluteString == "https://marauders-backend.azurewebsites.net")
     }
 
     @Test func audioDebounceMatchesContract() {

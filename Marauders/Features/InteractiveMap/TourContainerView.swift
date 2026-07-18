@@ -5,11 +5,14 @@ struct TourContainerView: View {
     let booking: TourBooking
     @StateObject private var session: TourSession
     @StateObject private var audioPlayer = NuggetAudioPlayer()
+    @StateObject private var ambientPlayer = AmbientAudioPlayer()
     @StateObject private var locationService = LocationService()
     @Environment(\.modelContext) private var modelContext
     @Query private var allVisits: [VisitedNugget]
     @State private var tab: TourTab = .map
     @State private var showBrowse = false
+    @State private var showAmbientToast = false
+    @State private var playedCheckpointIntros = Set<String>()
 
     enum TourTab: String, CaseIterable {
         case map = "Map"
@@ -39,34 +42,71 @@ struct TourContainerView: View {
             Group {
                 switch tab {
                 case .map:
-                    InteractiveMapView(session: session, visitedNuggetIDs: Set(visits.map(\.id)), selectedTab: $tab, onBrowse: { showBrowse = true })
+                    InteractiveMapView(
+                        session: session,
+                        visitedNuggetIDs: Set(visits.map(\.id)),
+                        selectedTab: $tab,
+                        onBrowse: { showBrowse = true },
+                        onSelectCheckpoint: selectCheckpoint
+                    )
                 case .scan:
-                    ARCameraView(session: session, audioPlayer: audioPlayer, onBrowse: { showBrowse = true })
+                    ARCameraView(session: session, audioPlayer: audioPlayer, ambientPlayer: ambientPlayer, onBrowse: { showBrowse = true })
                 case .info:
-                    MonumentInfoView(session: session, audioPlayer: audioPlayer, visitedNuggetIDs: Set(visits.map(\.id)))
+                    MonumentInfoView(
+                        session: session,
+                        audioPlayer: audioPlayer,
+                        visitedNuggetIDs: Set(visits.map(\.id)),
+                        onSelectCheckpoint: selectCheckpoint
+                    )
                 }
             }
             tourBar
+            if showAmbientToast { ambientToast }
         }
         .ignoresSafeArea(edges: .bottom)
         .safeAreaInset(edge: .top, spacing: 0) { tripProgress }
         .navigationTitle(session.installed.package.monument.name.v(session.language))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbar {
+            if ambientPlayer.isAvailable {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { ambientPlayer.toggleMute() } label: {
+                        Image(systemName: ambientPlayer.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    }
+                    .accessibilityLabel(ambientPlayer.isMuted ? "Unmute ambient audio" : "Mute ambient audio")
+                }
+            }
+        }
         .fullScreenCover(isPresented: $showBrowse) {
             BrowseModeView(session: session, onEngage: engage)
         }
         .onAppear {
             audioPlayer.onStart = markVisited
             locationService.start()
+            if ambientPlayer.start(installed: session.installed) {
+                showAmbientToast = true
+                Task {
+                    try? await Task.sleep(for: .seconds(2.4))
+                    withAnimation { showAmbientToast = false }
+                }
+            }
+            playCurrentCheckpointIntro()
         }
         .onDisappear {
             audioPlayer.stop()
+            ambientPlayer.stop()
             locationService.stop()
+        }
+        .onChange(of: audioPlayer.isPlaying) { _, playing in
+            ambientPlayer.setDucked(playing, for: .tourNarration)
+        }
+        .onChange(of: tab) { _, selected in
+            if selected == .map { playCurrentCheckpointIntro() }
         }
         .onChange(of: locationService.location) { _, _ in
             if let checkpoint = locationService.nearestCheckpoint(in: session.installed.package.checkpoints) {
-                withAnimation { session.select(checkpoint: checkpoint) }
+                withAnimation { selectCheckpoint(checkpoint) }
             }
         }
     }
@@ -95,6 +135,18 @@ struct TourContainerView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Trip progress")
         .accessibilityValue("\(completed) of \(totalNuggets) secrets discovered, \(Int(progress * 100)) percent")
+    }
+
+    private var ambientToast: some View {
+        Label("Ambient audio playing", systemImage: "music.note")
+            .font(.caption.weight(.semibold)).foregroundStyle(Theme.primary)
+            .padding(.horizontal, 14).padding(.vertical, 9)
+            .background(.ultraThinMaterial, in: Capsule())
+            .shadow(color: Theme.ink.opacity(0.12), radius: 8, y: 4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.top, 10)
+            .allowsHitTesting(false)
+            .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     private var tourBar: some View {
@@ -134,5 +186,21 @@ struct TourContainerView: View {
     private func engage(_ checkpoint: Checkpoint, _ nugget: Nugget) {
         session.select(checkpoint: checkpoint, nugget: nugget)
         audioPlayer.replay(nugget: nugget, language: session.language, directory: session.installed.directory)
+    }
+
+    private func selectCheckpoint(_ checkpoint: Checkpoint) {
+        session.select(checkpoint: checkpoint)
+        playCurrentCheckpointIntro()
+    }
+
+    private func playCurrentCheckpointIntro() {
+        guard let checkpoint = session.currentCheckpoint,
+              playedCheckpointIntros.insert(checkpoint.id).inserted else { return }
+        let started = audioPlayer.playIntro(
+            checkpoint: checkpoint,
+            language: session.language,
+            directory: session.installed.directory
+        )
+        if !started { playedCheckpointIntros.remove(checkpoint.id) }
     }
 }

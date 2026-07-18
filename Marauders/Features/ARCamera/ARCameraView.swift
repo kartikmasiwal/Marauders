@@ -6,6 +6,7 @@ import UIKit
 struct ARCameraView: View {
     @ObservedObject var session: TourSession
     @ObservedObject var audioPlayer: NuggetAudioPlayer
+    @ObservedObject var ambientPlayer: AmbientAudioPlayer
     let onBrowse: () -> Void
     @StateObject private var question = VoiceQuestionService()
     @State private var cameraAuthorized: Bool?
@@ -39,6 +40,10 @@ struct ARCameraView: View {
             if shutterFlash { shutterFeedback.zIndex(5) }
         }
         .task { await requestCameraAccess() }
+        .onChange(of: question.suppressesTourAudio) { _, suppressed in
+            ambientPlayer.setDucked(suppressed, for: .liveQuestion)
+        }
+        .onDisappear { ambientPlayer.setDucked(false, for: .liveQuestion) }
     }
 
     @ViewBuilder
@@ -101,6 +106,7 @@ struct ARCameraView: View {
         Button {
             guard let checkpoint = session.currentCheckpoint else { return }
             audioPlayer.stop()
+            ambientPlayer.setDucked(true, for: .liveQuestion)
             question.toggleRecording(
                 checkpointID: checkpoint.id,
                 monumentID: session.installed.package.monument.id,
@@ -133,6 +139,7 @@ struct ARCameraView: View {
             Button {
                 guard let checkpoint = session.currentCheckpoint else { return }
                 audioPlayer.stop()
+                ambientPlayer.setDucked(true, for: .liveQuestion)
                 question.retry(checkpointID: checkpoint.id, monumentID: session.installed.package.monument.id, language: session.language)
             } label: {
                 Label(message + " Tap to retry.", systemImage: "arrow.clockwise").statusPill(color: Theme.primary)

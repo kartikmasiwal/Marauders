@@ -92,11 +92,7 @@ struct TourPreparationView: View {
                     Image(systemName: "checkmark.icloud.fill").font(.system(size: 42)).foregroundStyle(Theme.teal)
                     Text("Tour ready offline").font(.title2.bold())
                     Text(installed.package.monument.overview.v(selectedLanguage)).foregroundStyle(Theme.mutedInk).multilineTextAlignment(.center)
-                    Picker("Guide language", selection: $selectedLanguage) {
-                        ForEach(installed.package.monument.languages, id: \.self) { language in
-                            Text(language == "hi" ? "हिन्दी" : "English").tag(language)
-                        }
-                    }.pickerStyle(.segmented).accessibilityIdentifier("languagePicker")
+                    languagePicker(for: installed.package.monument.languages)
                     Button("Start Tour") { started = true }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("startTourButton")
                 } else if let errorMessage {
                     Image(systemName: "wifi.exclamationmark").font(.system(size: 40)).foregroundStyle(Theme.primary)
@@ -119,5 +115,35 @@ struct TourPreparationView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    @ViewBuilder
+    private func languagePicker(for languages: [String]) -> some View {
+        if languages.count > 3 {
+            Picker("Guide language", selection: $selectedLanguage) {
+                languageOptions(languages)
+            }
+            .pickerStyle(.menu)
+            .tint(Theme.primary)
+            .accessibilityIdentifier("languagePicker")
+        } else {
+            Picker("Guide language", selection: $selectedLanguage) {
+                languageOptions(languages)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("languagePicker")
+        }
+    }
+
+    @ViewBuilder
+    private func languageOptions(_ languages: [String]) -> some View {
+        ForEach(languages, id: \.self) { code in
+            Text(languageLabel(for: code)).tag(code)
+        }
+    }
+
+    private func languageLabel(for code: String) -> String {
+        let locale = Locale(identifier: code)
+        return locale.localizedString(forLanguageCode: code)?.capitalized(with: locale) ?? code.uppercased()
     }
 }

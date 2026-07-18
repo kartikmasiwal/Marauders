@@ -22,6 +22,7 @@ final class PackageStore: ObservableObject {
 
     private let fileManager: FileManager
     private let session: URLSession
+    private let markerName = ".package-source"
 
     init(fileManager: FileManager = .default, session: URLSession = .shared) {
         self.fileManager = fileManager
@@ -31,34 +32,43 @@ final class PackageStore: ObservableObject {
     func installedTour(monumentID: String) throws -> InstalledTour? {
         let directory = try packageDirectory(monumentID: monumentID)
         guard fileManager.fileExists(atPath: directory.appendingPathComponent("tour.json").path) else { return nil }
-        return try decodeAndValidate(directory: directory)
+        return try decodeAndValidate(directory: directory, expectedMonumentID: monumentID)
     }
 
     func prepare(monumentID: String, preferBundled: Bool = true) async throws -> InstalledTour {
-        if let installed = try installedTour(monumentID: monumentID) { return installed }
         isDownloading = true
         downloadProgress = 0
         defer { isDownloading = false }
 
-        let archiveURL: URL
         if preferBundled, let bundled = Bundle.main.url(forResource: monumentID, withExtension: "zip") {
-            archiveURL = bundled
+            let fingerprint = try archiveFingerprint(bundled)
+            if let installed = try? installedTour(monumentID: monumentID),
+               try installedFingerprint(monumentID: monumentID) == fingerprint {
+                downloadProgress = 1
+                return installed
+            }
             downloadProgress = 0.35
-        } else {
-            archiveURL = try await download(monumentID: monumentID)
-            downloadProgress = 0.65
+            return try install(archive: bundled, monumentID: monumentID, fingerprint: fingerprint)
         }
 
-        let destination = try packageDirectory(monumentID: monumentID)
-        try? fileManager.removeItem(at: destination)
-        try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
-        try fileManager.unzipItem(at: archiveURL, to: destination)
-        downloadProgress = 1
-        return try decodeAndValidate(directory: destination)
+        if preferBundled, let installed = try? installedTour(monumentID: monumentID) {
+            downloadProgress = 1
+            return installed
+        }
+
+        let archiveURL = try await download(monumentID: monumentID)
+        defer { try? fileManager.removeItem(at: archiveURL) }
+        downloadProgress = 0.65
+        return try install(
+            archive: archiveURL,
+            monumentID: monumentID,
+            fingerprint: "remote-\(UUID().uuidString)"
+        )
     }
 
     func remove(monumentID: String) throws {
-        try fileManager.removeItem(at: packageDirectory(monumentID: monumentID))
+        let directory = try packageDirectory(monumentID: monumentID)
+        if fileManager.fileExists(atPath: directory.path) { try fileManager.removeItem(at: directory) }
     }
 
     private func download(monumentID: String) async throws -> URL {
@@ -70,33 +80,125 @@ final class PackageStore: ObservableObject {
         return destination
     }
 
-    private func packageDirectory(monumentID: String) throws -> URL {
+    private func install(archive: URL, monumentID: String, fingerprint: String) throws -> InstalledTour {
+        let root = try packageRoot()
+        let destination = root.appendingPathComponent(monumentID, isDirectory: true)
+        let staging = root.appendingPathComponent(".\(monumentID)-staging-\(UUID().uuidString)", isDirectory: true)
+        let backup = root.appendingPathComponent(".\(monumentID)-backup-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+
+        do {
+            try fileManager.unzipItem(at: archive, to: staging)
+            let validated = try decodeAndValidate(directory: staging, expectedMonumentID: monumentID)
+            try Data(fingerprint.utf8).write(to: staging.appendingPathComponent(markerName), options: .atomic)
+
+            if fileManager.fileExists(atPath: destination.path) { try fileManager.moveItem(at: destination, to: backup) }
+            do {
+                try fileManager.moveItem(at: staging, to: destination)
+                try? fileManager.removeItem(at: backup)
+            } catch {
+                if fileManager.fileExists(atPath: backup.path) { try? fileManager.moveItem(at: backup, to: destination) }
+                throw error
+            }
+            downloadProgress = 1
+            return InstalledTour(package: validated.package, directory: destination)
+        } catch {
+            try? fileManager.removeItem(at: staging)
+            throw error
+        }
+    }
+
+    private func packageRoot() throws -> URL {
         let root = try fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             .appendingPathComponent("TourPackages", isDirectory: true)
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
-        return root.appendingPathComponent(monumentID, isDirectory: true)
+        return root
     }
 
-    private func decodeAndValidate(directory: URL) throws -> InstalledTour {
+    private func packageDirectory(monumentID: String) throws -> URL {
+        try packageRoot().appendingPathComponent(monumentID, isDirectory: true)
+    }
+
+    private func archiveFingerprint(_ archive: URL) throws -> String {
+        let values = try archive.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        return "bundle-\(values.fileSize ?? 0)-\(values.contentModificationDate?.timeIntervalSince1970 ?? 0)"
+    }
+
+    private func installedFingerprint(monumentID: String) throws -> String? {
+        let marker = try packageDirectory(monumentID: monumentID).appendingPathComponent(markerName)
+        guard fileManager.fileExists(atPath: marker.path) else { return nil }
+        return String(data: try Data(contentsOf: marker), encoding: .utf8)
+    }
+
+    func decodeAndValidate(directory: URL, expectedMonumentID: String? = nil) throws -> InstalledTour {
         let data = try Data(contentsOf: directory.appendingPathComponent("tour.json"))
         let tourPackage = try JSONDecoder().decode(TourPackage.self, from: data)
-        guard !tourPackage.checkpoints.isEmpty else { throw PackageError.invalidPackage("no checkpoints") }
-
-        for checkpoint in tourPackage.checkpoints {
-            guard !checkpoint.nuggets.isEmpty else { throw PackageError.invalidPackage("\(checkpoint.id) has no nuggets") }
-            for path in checkpoint.introAudio.values where !fileManager.fileExists(atPath: directory.appendingPathComponent(path).path) {
-                throw PackageError.invalidPackage("missing \(path)")
-            }
-            for nugget in checkpoint.nuggets {
-                for path in nugget.audio.values where !fileManager.fileExists(atPath: directory.appendingPathComponent(path).path) {
-                    throw PackageError.invalidPackage("missing \(path)")
-                }
-                let target = directory.appendingPathComponent("targets/\(nugget.targetImageId).jpg")
-                guard fileManager.fileExists(atPath: target.path) else {
-                    throw PackageError.invalidPackage("missing targets/\(nugget.targetImageId).jpg")
-                }
-            }
+        guard tourPackage.schemaVersion == 1 else { throw PackageError.invalidPackage("unsupported schema version") }
+        if let expectedMonumentID, tourPackage.monument.id != expectedMonumentID {
+            throw PackageError.invalidPackage("package monument does not match \(expectedMonumentID)")
         }
-        return InstalledTour(package: tourPackage, directory: directory)
+
+        let checkpoints = tourPackage.checkpoints.compactMap { checkpoint -> Checkpoint? in
+            let introAudio = checkpoint.introAudio.filter { safeFileExists($0.value, in: directory) }
+            let nuggets = checkpoint.nuggets.compactMap { nugget -> Nugget? in
+                let audio = nugget.audio.filter { safeFileExists($0.value, in: directory) }
+                guard !audio.isEmpty else { return nil }
+                let targetID = safePathComponent(nugget.targetImageId) ? nugget.targetImageId : ""
+                return Nugget(
+                    id: nugget.id,
+                    title: nugget.title,
+                    targetImageId: targetID,
+                    exclusive: nugget.exclusive,
+                    text: nugget.text,
+                    audio: audio
+                )
+            }
+            guard !nuggets.isEmpty else { return nil }
+            return Checkpoint(
+                id: checkpoint.id,
+                order: checkpoint.order,
+                name: checkpoint.name,
+                mapPosition: checkpoint.mapPosition,
+                gps: checkpoint.gps,
+                venue: checkpoint.venue,
+                intro: checkpoint.intro,
+                introAudio: introAudio,
+                nuggets: nuggets
+            )
+        }
+
+        guard !checkpoints.isEmpty else { throw PackageError.invalidPackage("no playable checkpoints") }
+        let survivingIDs = Set(checkpoints.map(\.id))
+        let routes = sanitizedRoutes(tourPackage.routes, survivingIDs: survivingIDs)
+        let sanitized = TourPackage(
+            schemaVersion: tourPackage.schemaVersion,
+            monument: tourPackage.monument,
+            routes: routes,
+            checkpoints: checkpoints
+        )
+        return InstalledTour(package: sanitized, directory: directory)
+    }
+
+    private func safeFileExists(_ relativePath: String, in directory: URL) -> Bool {
+        guard safeRelativePath(relativePath) else { return false }
+        return fileManager.fileExists(atPath: directory.appendingPathComponent(relativePath).path)
+    }
+
+    private func safeRelativePath(_ path: String) -> Bool {
+        !path.isEmpty && !path.hasPrefix("/") && !path.split(separator: "/").contains("..")
+    }
+
+    private func safePathComponent(_ value: String) -> Bool {
+        !value.isEmpty && !value.contains("/") && value != "." && value != ".."
+    }
+
+    private func sanitizedRoutes(_ routes: Routes?, survivingIDs: Set<String>) -> Routes? {
+        guard let routes else { return nil }
+        func keep(_ route: Route?) -> Route? {
+            guard let route, survivingIDs.contains(route.start), survivingIDs.contains(route.end) else { return nil }
+            return route
+        }
+        let sanitized = Routes(monument: keep(routes.monument), venue: keep(routes.venue))
+        return sanitized.monument == nil && sanitized.venue == nil ? nil : sanitized
     }
 }
