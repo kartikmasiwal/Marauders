@@ -80,7 +80,7 @@ struct ARCameraView: View {
                 }
                 Spacer()
                 Button(action: onBrowse) {
-                    Label("Audio Exp", systemImage: "rectangle.grid.1x2")
+                    Label("Audio Exp", systemImage: "headphones")
                         .font(.caption.bold()).foregroundStyle(.white)
                         .padding(.horizontal, 12).padding(.vertical, 9).background(.ultraThinMaterial, in: Capsule())
                 }.accessibilityIdentifier("cameraBrowseButton")
@@ -153,7 +153,7 @@ struct ARCameraView: View {
 
     private func browseFallback(title: String, message: String, showsSettings: Bool = false) -> some View {
         VStack(spacing: 17) {
-            Image(systemName: "rectangle.grid.1x2.fill").font(.system(size: 48)).foregroundStyle(Theme.goldLight)
+            Image(systemName: "headphones").font(.system(size: 48)).foregroundStyle(Theme.goldLight)
             Text(title).font(.title2.bold()).foregroundStyle(.white)
             Text(message).foregroundStyle(.white.opacity(0.75)).multilineTextAlignment(.center)
             Button("Open Audio Exp", action: onBrowse)

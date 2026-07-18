@@ -108,7 +108,7 @@ struct InteractiveMapView: View {
                         Button { selectedTab = .scan } label: { Label("AR Exp", systemImage: "viewfinder") }
                             .buttonStyle(PrimaryButtonStyle())
                         Button(action: onBrowse) {
-                            Label("Audio Exp", systemImage: "rectangle.grid.1x2")
+                            Label("Audio Exp", systemImage: "headphones")
                                 .font(.subheadline.bold()).foregroundStyle(Theme.primary)
                                 .frame(maxWidth: .infinity).frame(height: 54)
                                 .background(Theme.surfaceContainer, in: RoundedRectangle(cornerRadius: 15))
