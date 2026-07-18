@@ -44,6 +44,8 @@ extension View {
 }
 
 struct PrimaryButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -52,6 +54,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .frame(minHeight: 54)
             .foregroundStyle(.white)
             .background(Theme.primary.opacity(configuration.isPressed ? 0.82 : 1), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .scaleEffect(reduceMotion || !configuration.isPressed ? 1 : 0.98)
+            .animation(reduceMotion ? nil : Motion.press, value: configuration.isPressed)
     }
 }

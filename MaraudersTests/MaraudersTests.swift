@@ -42,6 +42,12 @@ struct MaraudersTests {
 
         let session = AppSession(defaults: defaults)
         #expect(session.userName == "Swift Dzire LXI")
+        #expect(AppLanguage.allCases == [.englishUK, .hindi, .french, .spanish])
+        #expect(AppLanguage.englishUK.localeIdentifier == "en_GB")
+        #expect(AppLanguage.hindi.localeIdentifier == "hi_IN")
+        #expect(AppLanguage.french.localeIdentifier == "fr_FR")
+        #expect(AppLanguage.spanish.localeIdentifier == "es_ES")
+        #expect(AppLanguage.hindi.contentLanguageCode == "hi")
 
         session.updateProfile(
             name: "Test Explorer",
@@ -51,7 +57,7 @@ struct MaraudersTests {
             disabilityStatus: .yes,
             accessibilityNotes: "Step-free routes preferred"
         )
-        session.appLanguage = .hindi
+        session.appLanguage = .spanish
         session.prefersLargeText = true
         session.prefersHighContrast = true
 
@@ -62,7 +68,7 @@ struct MaraudersTests {
         #expect(restored.dateOfBirth == Date(timeIntervalSince1970: 631_152_000))
         #expect(restored.disabilityStatus == .yes)
         #expect(restored.accessibilityNotes == "Step-free routes preferred")
-        #expect(restored.appLanguage == .hindi)
+        #expect(restored.appLanguage == .spanish)
         #expect(restored.prefersLargeText)
         #expect(restored.prefersHighContrast)
     }

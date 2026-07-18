@@ -4,6 +4,7 @@ struct BrowseModeView: View {
     @ObservedObject var session: TourSession
     let onEngage: (Checkpoint, Nugget) -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var revealedNugget: Nugget?
 
     var body: some View {
@@ -14,9 +15,9 @@ struct BrowseModeView: View {
                     session: session,
                     nugget: nugget,
                     onReplay: { replay(nugget) },
-                    onClose: { withAnimation(.snappy) { revealedNugget = nil } }
+                    onClose: { withAnimation(Motion.change(reduceMotion: reduceMotion)) { revealedNugget = nil } }
                 )
-                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                .transition(Motion.subtleTransition(reduceMotion: reduceMotion))
             } else {
                 list
             }
@@ -32,7 +33,9 @@ struct BrowseModeView: View {
                         Text(checkpoint.intro.v(session.language)).foregroundStyle(Theme.mutedInk)
                         ForEach(checkpoint.nuggets) { nugget in nuggetCard(checkpoint: checkpoint, nugget: nugget) }
                     }
-                }.padding(20)
+                }
+                .padding(20)
+                .animation(Motion.change(reduceMotion: reduceMotion), value: session.currentCheckpointID)
             }
             .background(Theme.surfaceLow)
             .navigationTitle("Audio Experience")
@@ -57,7 +60,7 @@ struct BrowseModeView: View {
     private func nuggetCard(checkpoint: Checkpoint, nugget: Nugget) -> some View {
         Button {
             onEngage(checkpoint, nugget)
-            withAnimation(.snappy) { revealedNugget = nugget }
+            withAnimation(Motion.change(reduceMotion: reduceMotion)) { revealedNugget = nugget }
         } label: {
             HStack(spacing: 14) {
                 Image(uiImage: UIImage(contentsOfFile: session.installed.targetURL(for: nugget).path) ?? UIImage())

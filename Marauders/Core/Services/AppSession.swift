@@ -3,24 +3,36 @@ import Observation
 
 enum AppLanguage: String, CaseIterable, Identifiable {
     case englishUK
-    case englishUS
     case hindi
+    case french
+    case spanish
 
     var id: Self { self }
 
     var title: String {
         switch self {
         case .englishUK: "English (UK)"
-        case .englishUS: "English (US)"
-        case .hindi: "Hindi"
+        case .hindi: "हिन्दी"
+        case .french: "Français"
+        case .spanish: "Español"
         }
     }
 
     var localeIdentifier: String {
         switch self {
         case .englishUK: "en_GB"
-        case .englishUS: "en_US"
         case .hindi: "hi_IN"
+        case .french: "fr_FR"
+        case .spanish: "es_ES"
+        }
+    }
+
+    var contentLanguageCode: String {
+        switch self {
+        case .englishUK: "en"
+        case .hindi: "hi"
+        case .french: "fr"
+        case .spanish: "es"
         }
     }
 }

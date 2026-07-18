@@ -4,6 +4,7 @@ import SwiftUI
 struct ExploreView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var locationService = LocationService()
     @AppStorage("explore.manualCity") private var manualCity = ""
     @State private var detectedCity = "Finding your location..."
@@ -45,10 +46,11 @@ struct ExploreView: View {
                 Theme.surfaceLow.ignoresSafeArea()
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 24) {
-                        locationHeader
-                        introduction
-                        categoryPicker
+                        locationHeader.oneTimeStaggeredReveal(0)
+                        introduction.oneTimeStaggeredReveal(1)
+                        categoryPicker.oneTimeStaggeredReveal(2)
                         discoveryContent
+                            .animation(Motion.change(reduceMotion: reduceMotion), value: selectedCategory)
                     }
                     .padding(.bottom, 24)
                 }
@@ -92,6 +94,8 @@ struct ExploreView: View {
                 } label: {
                     HStack(spacing: 5) {
                         Text(displayedCity).font(.headline).foregroundStyle(Theme.ink)
+                            .contentTransition(.opacity)
+                            .animation(Motion.change(reduceMotion: reduceMotion), value: displayedCity)
                         Image(systemName: "chevron.down").font(.caption.bold()).foregroundStyle(Theme.primary)
                     }
                 }
@@ -124,14 +128,15 @@ struct ExploreView: View {
             HStack(spacing: 9) {
                 ForEach(DiscoveryCategory.allCases) { category in
                     Button {
-                        withAnimation(.snappy) { selectedCategory = category }
+                        selectedCategory = category
                     } label: {
-                        Label(category.title, systemImage: category.icon)
+                        Label(LocalizedStringKey(category.title), systemImage: category.icon)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(selectedCategory == category ? .white : Theme.primary)
                             .padding(.horizontal, 14).padding(.vertical, 10)
                             .background(selectedCategory == category ? Theme.primary : Theme.surface, in: Capsule())
                             .overlay { Capsule().stroke(Theme.outline.opacity(selectedCategory == category ? 0 : 0.7)) }
+                            .animation(reduceMotion ? nil : Motion.quick, value: selectedCategory)
                     }
                 }
             }
@@ -178,7 +183,7 @@ struct ExploreView: View {
         }
     }
 
-    private func sectionTitle(_ title: String, detail: String) -> some View {
+    private func sectionTitle(_ title: LocalizedStringKey, detail: LocalizedStringKey) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.title2.bold()).foregroundStyle(Theme.ink)
             Text(detail).font(.subheadline).foregroundStyle(Theme.mutedInk)
@@ -212,8 +217,8 @@ private struct FeaturedTicketCard: View {
         VStack(alignment: .leading, spacing: 0) {
             discoveryArtwork(item, height: 116)
             VStack(alignment: .leading, spacing: 7) {
-                Label(item.category.title.uppercased(), systemImage: item.category.icon)
-                    .font(.caption2.bold()).tracking(0.8).foregroundStyle(Theme.gold)
+                Label(LocalizedStringKey(item.category.title), systemImage: item.category.icon)
+                    .font(.caption2.bold()).tracking(0.8).textCase(.uppercase).foregroundStyle(Theme.gold)
                 Text(item.name)
                     .font(.headline).foregroundStyle(Theme.ink)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
