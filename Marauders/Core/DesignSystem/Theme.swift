@@ -48,7 +48,8 @@ struct PrimaryButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 15, weight: .semibold, design: .rounded))
             .frame(maxWidth: .infinity)
-            .frame(height: 54)
+            .padding(.vertical, 16)
+            .frame(minHeight: 54)
             .foregroundStyle(.white)
             .background(Theme.primary.opacity(configuration.isPressed ? 0.82 : 1), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.98 : 1)

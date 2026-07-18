@@ -34,4 +34,36 @@ struct MaraudersTests {
         #expect(AudioTiming.fadeOut == 0.6)
         #expect(AudioTiming.crossfade == 0.5)
     }
+
+    @Test @MainActor func profileAndPreferencesPersist() {
+        let suiteName = "MaraudersTests.Profile.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let session = AppSession(defaults: defaults)
+        #expect(session.userName == "Swift Dzire LXI")
+
+        session.updateProfile(
+            name: "Test Explorer",
+            email: "explorer@example.com",
+            gender: "Non-binary",
+            dateOfBirth: Date(timeIntervalSince1970: 631_152_000),
+            disabilityStatus: .yes,
+            accessibilityNotes: "Step-free routes preferred"
+        )
+        session.appLanguage = .hindi
+        session.prefersLargeText = true
+        session.prefersHighContrast = true
+
+        let restored = AppSession(defaults: defaults)
+        #expect(restored.userName == "Test Explorer")
+        #expect(restored.email == "explorer@example.com")
+        #expect(restored.gender == "Non-binary")
+        #expect(restored.dateOfBirth == Date(timeIntervalSince1970: 631_152_000))
+        #expect(restored.disabilityStatus == .yes)
+        #expect(restored.accessibilityNotes == "Step-free routes preferred")
+        #expect(restored.appLanguage == .hindi)
+        #expect(restored.prefersLargeText)
+        #expect(restored.prefersHighContrast)
+    }
 }
