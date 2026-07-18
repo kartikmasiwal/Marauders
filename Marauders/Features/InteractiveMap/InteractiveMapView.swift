@@ -8,6 +8,7 @@ struct InteractiveMapView: View {
     @State private var lastScale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
+    @State private var isCheckpointCardPresented = true
 
     private var ordered: [Checkpoint] { session.installed.package.checkpoints.sorted { $0.order < $1.order } }
 
@@ -86,6 +87,19 @@ struct InteractiveMapView: View {
                         Spacer()
                         Text("\(visitedCount(checkpoint))/\(checkpoint.nuggets.count) SECRETS")
                             .font(.caption2.bold()).foregroundStyle(Theme.teal)
+                        Button {
+                            withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+                                isCheckpointCardPresented = false
+                            }
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.caption.bold())
+                                .foregroundStyle(Theme.mutedInk)
+                                .frame(width: 30, height: 30)
+                                .background(Theme.surfaceContainer, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Close checkpoint details")
                     }
                     Text(checkpoint.name.v(session.language)).font(.title2.bold()).foregroundStyle(Theme.ink)
                     Text(checkpoint.intro.v(session.language)).font(.subheadline).foregroundStyle(Theme.mutedInk).lineLimit(2)
@@ -93,6 +107,11 @@ struct InteractiveMapView: View {
                         .buttonStyle(PrimaryButtonStyle())
                 }
                 .padding(18).heritageCard().padding(.horizontal, 16).padding(.bottom, 102)
+                .offset(y: isCheckpointCardPresented ? 0 : 420)
+                .opacity(isCheckpointCardPresented ? 1 : 0)
+                .scaleEffect(isCheckpointCardPresented ? 1 : 0.96, anchor: .bottom)
+                .allowsHitTesting(isCheckpointCardPresented)
+                .accessibilityHidden(!isCheckpointCardPresented)
             }
         }.frame(maxWidth: 520).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
@@ -135,7 +154,10 @@ struct InteractiveMapView: View {
 
     private func select(_ checkpoint: Checkpoint, state: CheckpointVisualState) {
         guard state != .locked else { return }
-        if checkpoint.gps == nil || checkpoint.venue { withAnimation { session.select(checkpoint: checkpoint) } }
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+            session.select(checkpoint: checkpoint)
+            isCheckpointCardPresented = true
+        }
     }
 
     private func zoom(_ amount: CGFloat) {
