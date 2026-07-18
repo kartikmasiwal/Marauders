@@ -9,6 +9,7 @@ struct TourContainerView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var allVisits: [VisitedNugget]
     @State private var tab: TourTab = .map
+    @State private var showBrowse = false
 
     enum TourTab: String, CaseIterable {
         case map = "Map"
@@ -38,9 +39,9 @@ struct TourContainerView: View {
             Group {
                 switch tab {
                 case .map:
-                    InteractiveMapView(session: session, visitedNuggetIDs: Set(visits.map(\.id)), selectedTab: $tab)
+                    InteractiveMapView(session: session, visitedNuggetIDs: Set(visits.map(\.id)), selectedTab: $tab, onBrowse: { showBrowse = true })
                 case .scan:
-                    ARCameraView(session: session, audioPlayer: audioPlayer)
+                    ARCameraView(session: session, audioPlayer: audioPlayer, onBrowse: { showBrowse = true })
                 case .info:
                     MonumentInfoView(session: session, audioPlayer: audioPlayer, visitedCount: visits.count)
                 }
@@ -52,6 +53,9 @@ struct TourContainerView: View {
         .navigationTitle(session.installed.package.monument.name.v(session.language))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .fullScreenCover(isPresented: $showBrowse) {
+            BrowseModeView(session: session, onEngage: engage)
+        }
         .onAppear {
             audioPlayer.onStart = markVisited
             locationService.start()
@@ -125,5 +129,10 @@ struct TourContainerView: View {
             monumentId: session.installed.package.monument.id
         ))
         try? modelContext.save()
+    }
+
+    private func engage(_ checkpoint: Checkpoint, _ nugget: Nugget) {
+        session.select(checkpoint: checkpoint, nugget: nugget)
+        audioPlayer.replay(nugget: nugget, language: session.language, directory: session.installed.directory)
     }
 }

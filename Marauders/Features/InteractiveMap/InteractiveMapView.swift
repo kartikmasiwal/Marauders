@@ -4,6 +4,7 @@ struct InteractiveMapView: View {
     @ObservedObject var session: TourSession
     let visitedNuggetIDs: Set<String>
     @Binding var selectedTab: TourContainerView.TourTab
+    let onBrowse: () -> Void
     @State private var scale: CGFloat = 1
     @State private var lastScale: CGFloat = 1
     @State private var offset: CGSize = .zero
@@ -103,8 +104,17 @@ struct InteractiveMapView: View {
                     }
                     Text(checkpoint.name.v(session.language)).font(.title2.bold()).foregroundStyle(Theme.ink)
                     Text(checkpoint.intro.v(session.language)).font(.subheadline).foregroundStyle(Theme.mutedInk).lineLimit(2)
-                    Button { selectedTab = .scan } label: { Label("Scan this checkpoint", systemImage: "viewfinder") }
-                        .buttonStyle(PrimaryButtonStyle())
+                    HStack(spacing: 10) {
+                        Button { selectedTab = .scan } label: { Label("Scan", systemImage: "viewfinder") }
+                            .buttonStyle(PrimaryButtonStyle())
+                        Button(action: onBrowse) {
+                            Label("Browse", systemImage: "rectangle.grid.1x2")
+                                .font(.subheadline.bold()).foregroundStyle(Theme.primary)
+                                .frame(maxWidth: .infinity).frame(height: 54)
+                                .background(Theme.surfaceContainer, in: RoundedRectangle(cornerRadius: 15))
+                        }
+                        .accessibilityIdentifier("browseCheckpointButton")
+                    }
                 }
                 .padding(18).heritageCard().padding(.horizontal, 16).padding(.bottom, 102)
                 .offset(y: isCheckpointCardPresented ? 0 : 420)
