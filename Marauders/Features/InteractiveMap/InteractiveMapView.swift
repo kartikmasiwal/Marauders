@@ -1,115 +1,150 @@
 import SwiftUI
 
 struct InteractiveMapView: View {
-    let monument: Monument
-    @ObservedObject var audioPlayer: AudioGuidePlayer
+    @ObservedObject var session: TourSession
+    let visitedNuggetIDs: Set<String>
     @Binding var selectedTab: TourContainerView.TourTab
-    @State private var selectedPoint: TourPoint?
-    @State private var audioPoint: TourPoint?
     @State private var scale: CGFloat = 1
     @State private var lastScale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
 
+    private var ordered: [Checkpoint] { session.installed.package.checkpoints.sorted { $0.order < $1.order } }
+
     var body: some View {
         GeometryReader { proxy in
+            let mapSize = fittedMapSize(in: proxy.size)
             ZStack {
-                Theme.surfaceContainer
-                map(in: proxy.size)
+                Theme.surfaceContainer.ignoresSafeArea()
+                ZStack {
+                    Image(mapImageName)
+                        .resizable().scaledToFit().frame(width: mapSize.width, height: mapSize.height)
+                    trail(in: mapSize)
+                    checkpoints(in: mapSize)
+                }
+                .frame(width: mapSize.width, height: mapSize.height)
+                .scaleEffect(scale).offset(offset)
+                .gesture(mapGesture)
                 controls
-                if let selectedPoint { pointCard(selectedPoint) }
+                checkpointCard
             }
             .clipped()
         }
-        .sheet(item: $audioPoint) { point in
-            AudioPlayerSheet(monument: monument, point: point, player: audioPlayer)
-        }
-        .onAppear { selectedPoint = monument.points.first }
     }
 
-    private func map(in size: CGSize) -> some View {
+    private var mapImageName: String {
+        switch session.installed.package.monument.id {
+        case "national_war_memorial": "WarMemorialMap"
+        case "zomato_farmhouse": "ZomatoFarmMap"
+        default: "TajMahalMap"
+        }
+    }
+
+    private func trail(in size: CGSize) -> some View {
+        Canvas { context, _ in
+            var path = Path()
+            for (index, checkpoint) in ordered.enumerated() {
+                let point = CGPoint(x: size.width * checkpoint.mapPosition.x, y: size.height * checkpoint.mapPosition.y)
+                index == 0 ? path.move(to: point) : path.addLine(to: point)
+            }
+            context.stroke(path, with: .color(Theme.gold.opacity(0.72)), style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round, dash: [6, 8]))
+        }
+        .frame(width: size.width, height: size.height)
+        .allowsHitTesting(false)
+    }
+
+    private func checkpoints(in size: CGSize) -> some View {
         ZStack {
-            Image(monument.imageName)
-                .resizable().scaledToFill()
-                .frame(width: size.width, height: size.height)
-                .clipped()
-            ForEach(monument.points) { point in
-                Button {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { selectedPoint = point }
-                } label: {
+            ForEach(Array(ordered.enumerated()), id: \.element.id) { index, checkpoint in
+                let state = checkpointState(checkpoint, index: index)
+                Button { select(checkpoint, state: state) } label: {
                     VStack(spacing: 4) {
-                        Text("\(point.number)")
-                            .font(.caption.bold()).foregroundStyle(.white)
-                            .frame(width: selectedPoint == point ? 38 : 30, height: selectedPoint == point ? 38 : 30)
-                            .background(Theme.primary, in: Circle())
-                            .overlay { Circle().stroke(.white, lineWidth: 3) }
-                            .shadow(color: Theme.primary.opacity(0.45), radius: 8)
-                        Text(point.title)
+                        ZStack {
+                            Circle().fill(state.color).frame(width: state == .current ? 42 : 34, height: state == .current ? 42 : 34)
+                            Image(systemName: state.icon).font(.caption.bold()).foregroundStyle(.white)
+                        }
+                        .overlay { Circle().stroke(.white, lineWidth: 3) }
+                        .shadow(color: state.color.opacity(0.45), radius: 8)
+                        Text(checkpoint.name.v(session.language))
                             .font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.primary)
-                            .padding(.horizontal, 6).padding(.vertical, 3)
-                            .background(Theme.surface.opacity(0.92), in: Capsule())
+                            .padding(.horizontal, 6).padding(.vertical, 3).background(Theme.surface.opacity(0.94), in: Capsule())
                     }
                 }
-                .position(x: size.width * point.position.x, y: size.height * point.position.y)
-                .accessibilityIdentifier("mapPoint_\(point.id)")
+                .disabled(state == .locked)
+                .position(x: size.width * checkpoint.mapPosition.x, y: size.height * checkpoint.mapPosition.y)
+                .accessibilityIdentifier("checkpoint_\(checkpoint.id)")
             }
-        }
-        .scaleEffect(scale)
-        .offset(offset)
-        .gesture(
-            MagnifyGesture()
-                .onChanged { value in scale = min(max(lastScale * value.magnification, 1), 3.5) }
-                .onEnded { _ in lastScale = scale; if scale == 1 { withAnimation { offset = .zero; lastOffset = .zero } } }
-                .simultaneously(with: DragGesture().onChanged { value in
-                    guard scale > 1 else { return }
-                    offset = CGSize(width: lastOffset.width + value.translation.width, height: lastOffset.height + value.translation.height)
-                }.onEnded { _ in lastOffset = offset })
-        )
+        }.frame(width: size.width, height: size.height)
+    }
+
+    private var checkpointCard: some View {
+        Group {
+            if let checkpoint = session.currentCheckpoint {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("CHECKPOINT \(checkpoint.order + 1)").font(.caption2.bold()).tracking(1).foregroundStyle(Theme.gold)
+                        Spacer()
+                        Text("\(visitedCount(checkpoint))/\(checkpoint.nuggets.count) SECRETS")
+                            .font(.caption2.bold()).foregroundStyle(Theme.teal)
+                    }
+                    Text(checkpoint.name.v(session.language)).font(.title2.bold()).foregroundStyle(Theme.ink)
+                    Text(checkpoint.intro.v(session.language)).font(.subheadline).foregroundStyle(Theme.mutedInk).lineLimit(2)
+                    Button { selectedTab = .scan } label: { Label("Scan this checkpoint", systemImage: "viewfinder") }
+                        .buttonStyle(PrimaryButtonStyle())
+                }
+                .padding(18).heritageCard().padding(.horizontal, 16).padding(.bottom, 102)
+            }
+        }.frame(maxWidth: 520).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
 
     private var controls: some View {
-        VStack(spacing: 8) {
-            Button { zoom(by: 0.4) } label: { Image(systemName: "plus") }
-            Divider().frame(width: 22)
-            Button { zoom(by: -0.4) } label: { Image(systemName: "minus") }
+        VStack(spacing: 9) {
+            Button { zoom(0.4) } label: { Image(systemName: "plus") }
+            Button { zoom(-0.4) } label: { Image(systemName: "minus") }
             Button { withAnimation { scale = 1; lastScale = 1; offset = .zero; lastOffset = .zero } } label: { Image(systemName: "location.fill") }
         }
-        .font(.headline).foregroundStyle(Theme.primary).padding(10)
-        .background(.ultraThinMaterial, in: Capsule()).shadow(radius: 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        .padding(.top, 18).padding(.trailing, 16)
+        .font(.headline).foregroundStyle(Theme.primary).padding(11).background(.ultraThinMaterial, in: Capsule()).shadow(radius: 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(16)
     }
 
-    private func pointCard(_ point: TourPoint) -> some View {
-        VStack(alignment: .leading, spacing: 13) {
-            Capsule().fill(Theme.mutedInk.opacity(0.22)).frame(width: 42, height: 5).frame(maxWidth: .infinity)
-            Text("CHAPTER \(point.number) · \(point.subtitle.uppercased())")
-                .font(.caption2.bold()).tracking(1).foregroundStyle(Theme.gold)
-            Text(point.title).font(.system(size: 23, weight: .bold, design: .rounded)).foregroundStyle(Theme.ink)
-            Text(point.details).font(.subheadline).foregroundStyle(Theme.mutedInk).lineLimit(3)
-            HStack(spacing: 10) {
-                Button { audioPoint = point } label: { Label("Listen", systemImage: "waveform.circle.fill").frame(maxWidth: .infinity) }
-                    .buttonStyle(PrimaryButtonStyle())
-                Button { selectedTab = .scan } label: {
-                    Label("Live AR", systemImage: "viewfinder").font(.subheadline.bold()).foregroundStyle(Theme.primary)
-                        .frame(maxWidth: .infinity).frame(height: 52)
-                        .background(Theme.surfaceContainer, in: RoundedRectangle(cornerRadius: 15))
-                        .overlay { RoundedRectangle(cornerRadius: 15).stroke(Theme.primary.opacity(0.25)) }
-                }
-            }
-        }
-        .padding(18).heritageCard()
-        .frame(maxWidth: 520)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .padding(.horizontal, 16).padding(.bottom, 102)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
+    private var mapGesture: some Gesture {
+        MagnifyGesture().onChanged { value in scale = min(max(lastScale * value.magnification, 1), 3.5) }
+            .onEnded { _ in lastScale = scale }
+            .simultaneously(with: DragGesture().onChanged { value in
+                guard scale > 1 else { return }
+                offset = CGSize(width: lastOffset.width + value.translation.width, height: lastOffset.height + value.translation.height)
+            }.onEnded { _ in lastOffset = offset })
     }
 
-    private func zoom(by delta: CGFloat) {
-        withAnimation(.snappy) {
-            scale = min(max(scale + delta, 1), 3.5)
-            lastScale = scale
-            if scale == 1 { offset = .zero; lastOffset = .zero }
-        }
+    private func fittedMapSize(in available: CGSize) -> CGSize {
+        let ratio: CGFloat = 472 / 774
+        let height = available.height
+        let width = min(available.width, height * ratio)
+        return CGSize(width: width, height: width / ratio)
     }
+
+    private func visitedCount(_ checkpoint: Checkpoint) -> Int { checkpoint.nuggets.filter { visitedNuggetIDs.contains($0.id) }.count }
+
+    private func checkpointState(_ checkpoint: Checkpoint, index: Int) -> CheckpointVisualState {
+        if checkpoint.id == session.currentCheckpointID { return .current }
+        if visitedCount(checkpoint) == checkpoint.nuggets.count { return .visited }
+        if index == 0 { return .available }
+        let previous = ordered[index - 1]
+        return visitedCount(previous) == previous.nuggets.count ? .available : .locked
+    }
+
+    private func select(_ checkpoint: Checkpoint, state: CheckpointVisualState) {
+        guard state != .locked else { return }
+        if checkpoint.gps == nil || checkpoint.venue { withAnimation { session.select(checkpoint: checkpoint) } }
+    }
+
+    private func zoom(_ amount: CGFloat) {
+        withAnimation(.snappy) { scale = min(max(scale + amount, 1), 3.5); lastScale = scale }
+    }
+}
+
+private enum CheckpointVisualState: Equatable {
+    case locked, available, current, visited
+    var color: Color { switch self { case .locked: .gray; case .available: Theme.gold; case .current: Theme.primary; case .visited: Theme.teal } }
+    var icon: String { switch self { case .locked: "lock.fill"; case .available: "circle.fill"; case .current: "location.fill"; case .visited: "checkmark" } }
 }

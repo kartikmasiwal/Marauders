@@ -1,9 +1,14 @@
+import SwiftData
 import SwiftUI
 
 struct TourContainerView: View {
-    let monument: Monument
+    let booking: TourBooking
+    @StateObject private var session: TourSession
+    @StateObject private var audioPlayer = NuggetAudioPlayer()
+    @StateObject private var locationService = LocationService()
+    @Environment(\.modelContext) private var modelContext
+    @Query private var allVisits: [VisitedNugget]
     @State private var tab: TourTab = .map
-    @StateObject private var audioPlayer = AudioGuidePlayer()
 
     enum TourTab: String, CaseIterable {
         case map = "Map"
@@ -15,21 +20,46 @@ struct TourContainerView: View {
         }
     }
 
+    init(booking: TourBooking, installed: InstalledTour, language: String) {
+        self.booking = booking
+        _session = StateObject(wrappedValue: TourSession(installed: installed, language: language))
+    }
+
+    private var visits: [VisitedNugget] {
+        allVisits.filter { $0.monumentId == session.installed.package.monument.id }
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             Group {
                 switch tab {
-                case .map: InteractiveMapView(monument: monument, audioPlayer: audioPlayer, selectedTab: $tab)
-                case .scan: ARCameraView(monument: monument)
-                case .info: MonumentInfoView(monument: monument, audioPlayer: audioPlayer)
+                case .map:
+                    InteractiveMapView(session: session, visitedNuggetIDs: Set(visits.map(\.id)), selectedTab: $tab)
+                case .scan:
+                    ARCameraView(session: session, audioPlayer: audioPlayer)
+                case .info:
+                    MonumentInfoView(session: session, audioPlayer: audioPlayer, visitedCount: visits.count)
                 }
             }
             tourBar
         }
         .ignoresSafeArea(edges: .bottom)
-        .navigationTitle(monument.name)
+        .navigationTitle(session.installed.package.monument.name.v(session.language))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .onAppear {
+            audioPlayer.onStart = markVisited
+            locationService.start()
+        }
+        .onDisappear {
+            audioPlayer.stop()
+            locationService.stop()
+        }
+        .onChange(of: locationService.location) { _, _ in
+            if let checkpoint = locationService.nearestCheckpoint(in: session.installed.package.checkpoints) {
+                withAnimation { session.select(checkpoint: checkpoint) }
+            }
+        }
     }
 
     private var tourBar: some View {
@@ -51,5 +81,18 @@ struct TourContainerView: View {
         .background(.ultraThinMaterial)
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 22, topTrailingRadius: 22))
         .shadow(color: .black.opacity(0.1), radius: 12, y: -3)
+    }
+
+    private func markVisited(_ nuggetID: String) {
+        guard !visits.contains(where: { $0.id == nuggetID }),
+              let checkpoint = session.checkpoint(containing: nuggetID) else { return }
+        session.activeNuggetID = nuggetID
+        session.currentCheckpointID = checkpoint.id
+        modelContext.insert(VisitedNugget(
+            id: nuggetID,
+            checkpointId: checkpoint.id,
+            monumentId: session.installed.package.monument.id
+        ))
+        try? modelContext.save()
     }
 }

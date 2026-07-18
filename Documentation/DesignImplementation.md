@@ -10,3 +10,15 @@ Marauders follows the supplied Monument Guide specification and HTML references.
 - Typography: rounded system headings approximate Plus Jakarta Sans without requiring a separately licensed font bundle; body text uses the native system face for Dynamic Type support.
 
 The implementation was derived from the supplied Monument Guide design specification, HTML references, and map images. No remote image URLs or API credentials are used by the app.
+
+## Backend Contract Integration
+
+- `TourPackage`, `Monument`, `Routes`, `Route`, `Checkpoint`, `MapPosition`, `GPS`, and `Nugget` match the deployed Codable contract.
+- `PackageStore` installs ZIP files to Application Support, decodes `tour.json`, and rejects missing checkpoints, nuggets, audio, or target files.
+- `NuggetAudioPlayer` applies 0.3-second recognition entry and 1.5-second loss exit holds before local playback changes.
+- `VisitedNugget` is the SwiftData source of truth for persisted map and recap progress.
+- `ARImageTrackingView` creates reference images from the installed package and maps recognition names back to nuggets.
+- `AzureAnswerEngine` is the only online tour feature and applies `X-App-Key` only to `/ask`.
+- `LocationService` performs radius checks on-device and does not use GPS for indoor checkpoints.
+
+The iOS 27 FoundationModels recap remains intentionally stubbed because the installed SDK is iOS 26. The `AnswerEngine` abstraction is ready for that implementation when the toolchain is available.

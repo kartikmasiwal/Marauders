@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "monument": {
+    "id": "taj_mahal",
+    "name": {"en": "Taj Mahal", "hi": "ताज महल"},
+    "languages": ["en", "hi"],
+    "overview": {
+      "en": "Follow a three-part trail through the gateway, the Charbagh, and the marble platform.",
+      "hi": "मुख्य द्वार, चारबाग और संगमरमर के चबूतरे से होकर तीन भागों की यात्रा करें।"
+    }
+  },
+  "routes": {
+    "monument": {"start": "cp_main_gate", "end": "cp_main_platform"},
+    "venue": null
+  },
+  "checkpoints": [
+    {
+      "id": "cp_main_gate",
+      "order": 0,
+      "name": {"en": "The Great Gate", "hi": "महान द्वार"},
+      "mapPosition": {"x": 0.22, "y": 0.70},
+      "gps": {"lat": 27.17305, "lng": 78.04212, "radius": 35.0},
+      "venue": false,
+      "intro": {
+        "en": "The red sandstone gateway frames your first view of the mausoleum.",
+        "hi": "लाल बलुआ पत्थर का द्वार मकबरे के पहले दृश्य को सुंदर ढंग से प्रस्तुत करता है।"
+      },
+      "introAudio": {"en": "audio/cp_main_gate_intro_en.mp3", "hi": "audio/cp_main_gate_intro_hi.mp3"},
+      "nuggets": [
+        {
+          "id": "nugget_calligraphy",
+          "title": {"en": "Letters that stay the same size", "hi": "एक समान दिखते अक्षर"},
+          "targetImageId": "target_calligraphy",
+          "exclusive": true,
+          "text": {
+            "en": "The higher calligraphy is carved larger, correcting perspective so every line appears equal from the ground.",
+            "hi": "ऊपर के अक्षर बड़े तराशे गए हैं, जिससे नीचे से देखने पर सभी पंक्तियां एक समान आकार की लगती हैं।"
+          },
+          "audio": {"en": "audio/nugget_calligraphy_en.mp3", "hi": "audio/nugget_calligraphy_hi.mp3"}
+        }
+      ]
+    },
+    {
+      "id": "cp_charbagh",
+      "order": 1,
+      "name": {"en": "Charbagh Garden", "hi": "चारबाग उद्यान"},
+      "mapPosition": {"x": 0.50, "y": 0.53},
+      "gps": {"lat": 27.17420, "lng": 78.04210, "radius": 40.0},
+      "venue": false,
+      "intro": {
+        "en": "Four waterways divide the garden into a geometric vision of paradise.",
+        "hi": "चार जलमार्ग उद्यान को स्वर्ग की ज्यामितीय कल्पना में बांटते हैं।"
+      },
+      "introAudio": {"en": "audio/cp_charbagh_intro_en.mp3", "hi": "audio/cp_charbagh_intro_hi.mp3"},
+      "nuggets": [
+        {
+          "id": "nugget_reflection",
+          "title": {"en": "The engineered reflection", "hi": "सोचा-समझा प्रतिबिंब"},
+          "targetImageId": "target_reflection",
+          "exclusive": false,
+          "text": {
+            "en": "The long pool was aligned to multiply the monument's symmetry and guide every visitor toward its central axis.",
+            "hi": "लंबा जलकुंड स्मारक की समरूपता को बढ़ाता है और दर्शक को उसकी केंद्रीय धुरी की ओर ले जाता है।"
+          },
+          "audio": {"en": "audio/nugget_reflection_en.mp3", "hi": "audio/nugget_reflection_hi.mp3"}
+        }
+      ]
+    },
+    {
+      "id": "cp_main_platform",
+      "order": 2,
+      "name": {"en": "Marble Platform", "hi": "संगमरमर का चबूतरा"},
+      "mapPosition": {"x": 0.72, "y": 0.31},
+      "gps": {"lat": 27.17509, "lng": 78.04212, "radius": 30.0},
+      "venue": false,
+      "intro": {
+        "en": "The raised riverfront platform unites the mausoleum, mosque, and guest pavilion.",
+        "hi": "नदी किनारे का ऊंचा चबूतरा मकबरे, मस्जिद और अतिथि मंडप को एक साथ जोड़ता है।"
+      },
+      "introAudio": {"en": "audio/cp_main_platform_intro_en.mp3", "hi": "audio/cp_main_platform_intro_hi.mp3"},
+      "nuggets": [
+        {
+          "id": "nugget_makranamarble",
+          "title": {"en": "Why the marble glows", "hi": "संगमरमर क्यों चमकता है"},
+          "targetImageId": "target_marble",
+          "exclusive": true,
+          "text": {
+            "en": "Makrana marble is slightly translucent. Light enters its surface and scatters back, creating a soft glow that changes through the day.",
+            "hi": "मकराना संगमरमर थोड़ा पारदर्शी है। प्रकाश सतह में प्रवेश करके वापस फैलता है, इसलिए दिन भर इसकी चमक बदलती रहती है।"
+          },
+          "audio": {"en": "audio/nugget_makranamarble_en.mp3", "hi": "audio/nugget_makranamarble_hi.mp3"}
+        }
+      ]
+    }
+  ]
+}

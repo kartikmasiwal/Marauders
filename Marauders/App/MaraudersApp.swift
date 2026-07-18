@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 @main
 struct MaraudersApp: App {
@@ -9,6 +10,7 @@ struct MaraudersApp: App {
             RootView()
                 .environment(session)
                 .preferredColorScheme(.light)
+                .modelContainer(for: VisitedNugget.self)
         }
     }
 }
