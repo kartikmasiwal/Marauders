@@ -4,6 +4,7 @@ import SwiftUI
 struct ExploreView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @EnvironmentObject private var packageCatalog: PackageCatalog
     @StateObject private var locationService = LocationService()
     @AppStorage("explore.manualCity") private var manualCity = ""
     @State private var detectedCity = "Finding your location..."
@@ -52,6 +53,7 @@ struct ExploreView: View {
                     }
                     .padding(.bottom, 24)
                 }
+                .refreshable { await packageCatalog.refresh() }
             }
             .toolbar(.hidden, for: .navigationBar)
             .onAppear {

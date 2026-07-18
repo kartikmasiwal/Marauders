@@ -143,12 +143,14 @@ final class PackageStore: ObservableObject {
             let nuggets = checkpoint.nuggets.compactMap { nugget -> Nugget? in
                 let audio = nugget.audio.filter { safeFileExists($0.value, in: directory) }
                 guard !audio.isEmpty else { return nil }
+                let images = nugget.images.filter { safeFileExists($0, extension: "webp", in: directory) }
                 let targetID = safePathComponent(nugget.targetImageId) ? nugget.targetImageId : ""
                 return Nugget(
                     id: nugget.id,
                     title: nugget.title,
                     targetImageId: targetID,
                     exclusive: nugget.exclusive,
+                    images: images,
                     text: nugget.text,
                     audio: audio
                 )
@@ -179,17 +181,26 @@ final class PackageStore: ObservableObject {
         return InstalledTour(package: sanitized, directory: directory)
     }
 
-    private func safeFileExists(_ relativePath: String, in directory: URL) -> Bool {
+    private func safeFileExists(_ relativePath: String, extension requiredExtension: String? = nil, in directory: URL) -> Bool {
         guard safeRelativePath(relativePath) else { return false }
-        return fileManager.fileExists(atPath: directory.appendingPathComponent(relativePath).path)
+        let candidate = directory.appendingPathComponent(relativePath).standardizedFileURL.resolvingSymlinksInPath()
+        let root = directory.standardizedFileURL.resolvingSymlinksInPath().path + "/"
+        guard candidate.path.hasPrefix(root) else { return false }
+        if let requiredExtension, candidate.pathExtension.lowercased() != requiredExtension { return false }
+        var isDirectory: ObjCBool = false
+        return fileManager.fileExists(atPath: candidate.path, isDirectory: &isDirectory) && !isDirectory.boolValue
     }
 
     private func safeRelativePath(_ path: String) -> Bool {
-        !path.isEmpty && !path.hasPrefix("/") && !path.split(separator: "/").contains("..")
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        return !path.isEmpty
+            && !path.hasPrefix("/")
+            && !path.contains("\\")
+            && !parts.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." })
     }
 
     private func safePathComponent(_ value: String) -> Bool {
-        !value.isEmpty && !value.contains("/") && value != "." && value != ".."
+        !value.isEmpty && !value.contains("/") && !value.contains("\\") && value != "." && value != ".."
     }
 
     private func sanitizedRoutes(_ routes: Routes?, survivingIDs: Set<String>) -> Routes? {

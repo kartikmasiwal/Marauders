@@ -32,7 +32,7 @@ struct NuggetRevealCard: View {
     }
 
     private var hero: some View {
-        NuggetMediaView(url: session.installed.targetURL(for: nugget))
+        NuggetGallery(urls: session.installed.displayURLs(for: nugget), nuggetID: nugget.id)
             .frame(height: 310).clipped()
             .overlay {
                 LinearGradient(
@@ -40,6 +40,7 @@ struct NuggetRevealCard: View {
                     startPoint: .leading, endPoint: .trailing
                 )
                 .rotationEffect(.degrees(-12)).offset(x: sweepOffset * 420).blendMode(.screen)
+                    .allowsHitTesting(false)
             }
             .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             .overlay { RoundedRectangle(cornerRadius: 28).stroke(Theme.gold.opacity(0.35), lineWidth: 1) }
@@ -57,6 +58,23 @@ struct NuggetRevealCard: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         .padding(28)
         .accessibilityIdentifier("closeNuggetReveal")
+    }
+}
+
+struct NuggetGallery: View {
+    let urls: [URL]
+    let nuggetID: String
+
+    var body: some View {
+        TabView {
+            ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
+                NuggetMediaView(url: url)
+                    .accessibilityLabel("Image \(index + 1) of \(urls.count)")
+                    .accessibilityIdentifier("nuggetGalleryPage_\(nuggetID)_\(index)")
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: urls.count > 1 ? .automatic : .never))
+        .accessibilityIdentifier("nuggetGallery_\(nuggetID)")
     }
 }
 

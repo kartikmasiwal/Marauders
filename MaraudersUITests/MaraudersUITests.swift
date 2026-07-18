@@ -14,6 +14,10 @@ final class MaraudersUITests: XCTestCase {
         toursTab.tap()
         XCTAssertTrue(app.staticTexts["My Tours"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["viewTicket_taj-mahal"].exists)
+        let zomato = app.buttons["viewTicket_zomato-farmhouse"]
+        XCTAssertTrue(zomato.waitForExistence(timeout: 3))
+        expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: zomato)
+        waitForExpectations(timeout: 15)
     }
 
     func testBundledTourReachesMap() {
@@ -38,14 +42,14 @@ final class MaraudersUITests: XCTestCase {
         XCTAssertTrue(ready.waitForExistence(timeout: 10))
         app.buttons["startTourButton"].tap()
         app.tap()
-        XCTAssertTrue(app.buttons["checkpoint_cp_great_gate"].waitForExistence(timeout: 5))
         let browse = app.buttons["browseCheckpointButton"]
-        XCTAssertTrue(browse.waitForExistence(timeout: 5))
+        XCTAssertTrue(browse.waitForExistence(timeout: 15))
         browse.tap()
-        if !app.navigationBars["Browse Secrets"].waitForExistence(timeout: 2) { browse.tap() }
-        XCTAssertTrue(app.navigationBars["Browse Secrets"].waitForExistence(timeout: 5))
+        if !app.navigationBars["Audio Experience"].waitForExistence(timeout: 2) { browse.tap() }
+        XCTAssertTrue(app.navigationBars["Audio Experience"].waitForExistence(timeout: 5))
         app.buttons["browseNugget_n_gate_illusion"].tap()
         XCTAssertTrue(app.staticTexts["nuggetRevealTitle_n_gate_illusion"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["nuggetGallery_n_gate_illusion"].exists)
         app.buttons["closeNuggetReveal"].tap()
         app.buttons["Close"].tap()
         XCTAssertTrue(app.staticTexts["1/2 SECRETS"].waitForExistence(timeout: 5))

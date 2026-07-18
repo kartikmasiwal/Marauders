@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct MainTabView: View {
+    @StateObject private var packageCatalog = PackageCatalog()
+
     var body: some View {
         TabView {
             ExploreView()
@@ -12,6 +14,8 @@ struct MainTabView: View {
             ProfileView()
                 .tabItem { Label("Profile", systemImage: "person.crop.circle") }
         }
+        .environmentObject(packageCatalog)
+        .task { await packageCatalog.refresh() }
         .tint(Theme.primary)
     }
 }

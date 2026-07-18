@@ -17,9 +17,7 @@ final class AmbientAudioPlayer: ObservableObject {
     @discardableResult
     func start(installed: InstalledTour) -> Bool {
         stop()
-        guard let path = installed.package.monument.ambientTrack, !path.isEmpty else { return false }
-        let url = installed.fileURL(for: path)
-        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        guard let url = audioURL(installed: installed) else { return false }
         do {
             let next = try AVAudioPlayer(contentsOf: url)
             next.numberOfLoops = -1
@@ -35,6 +33,14 @@ final class AmbientAudioPlayer: ObservableObject {
             isAvailable = false
             return false
         }
+    }
+
+    private func audioURL(installed: InstalledTour) -> URL? {
+        if let path = installed.package.monument.ambientTrack, !path.isEmpty {
+            let packageURL = installed.fileURL(for: path)
+            if FileManager.default.fileExists(atPath: packageURL.path) { return packageURL }
+        }
+        return Bundle.main.url(forResource: "default_ambient", withExtension: "m4a")
     }
 
     func setDucked(_ ducked: Bool, for reason: DuckReason) {

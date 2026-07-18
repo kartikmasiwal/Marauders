@@ -6,5 +6,4 @@ struct TourBooking: Identifiable, Hashable {
     let name: String
     let city: String
     let imageName: String
-    let packageAvailable: Bool
 }

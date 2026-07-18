@@ -15,6 +15,11 @@ struct MaraudersTests {
         #expect(installed.package.routes?.venue == nil)
         #expect(installed.package.monument.languages.contains("en"))
         #expect(installed.package.monument.languages.contains("hi"))
+        #expect(installed.package.monument.languages.contains("fr"))
+        #expect(installed.package.monument.languages.contains("es"))
+        #expect(installed.package.checkpoints.flatMap(\.nuggets).flatMap(\.images).count == 2)
+        #expect(Bundle.main.url(forResource: "default_ambient", withExtension: "m4a") != nil)
+        #expect(PackageCatalog().isLocallyAvailable("taj_mahal"))
         for checkpoint in installed.package.checkpoints {
             for path in checkpoint.introAudio.values {
                 #expect(FileManager.default.fileExists(atPath: installed.fileURL(for: path).path))
@@ -22,6 +27,7 @@ struct MaraudersTests {
             for nugget in checkpoint.nuggets {
                 #expect(FileManager.default.fileExists(atPath: installed.targetURL(for: nugget).path))
                 #expect(nugget.audio.values.allSatisfy { FileManager.default.fileExists(atPath: installed.fileURL(for: $0).path) })
+                #expect(nugget.images.allSatisfy { FileManager.default.fileExists(atPath: installed.fileURL(for: $0).path) })
             }
         }
     }
@@ -72,7 +78,35 @@ struct MaraudersTests {
         #expect(installed.package.checkpoints.map(\.id) == ["playable"])
         #expect(installed.package.checkpoints[0].introAudio.isEmpty)
         #expect(installed.package.checkpoints[0].nuggets[0].audio == ["en": "audio/playable_en.mp3"])
+        #expect(installed.package.checkpoints[0].nuggets[0].images.isEmpty)
+        #expect(installed.displayURLs(for: installed.package.checkpoints[0].nuggets[0]) == [installed.targetURL(for: installed.package.checkpoints[0].nuggets[0])])
         #expect(!FileManager.default.fileExists(atPath: installed.targetURL(for: installed.package.checkpoints[0].nuggets[0]).path))
+    }
+
+    @Test @MainActor func galleryPathsAreSanitizedWithoutDroppingNugget() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("gallery-tour-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("audio"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("images"), withIntermediateDirectories: true)
+        try Data([0]).write(to: root.appendingPathComponent("audio/playable.mp3"))
+        try Data([0]).write(to: root.appendingPathComponent("images/valid.webp"))
+        let json = """
+        {"schemaVersion":1,"monument":{"id":"gallery","name":{"en":"Gallery"},"languages":["en"],"overview":{"en":"Gallery"}},"routes":null,"checkpoints":[{"id":"cp","order":0,"name":{"en":"CP"},"mapPosition":{"x":0.5,"y":0.5},"gps":null,"venue":false,"intro":{},"introAudio":{},"nuggets":[{"id":"n","title":{"en":"N"},"targetImageId":"target","exclusive":false,"images":["../outside.webp","images/missing.webp","images/not.jpg","images/valid.webp"],"text":{"en":"N"},"audio":{"en":"audio/playable.mp3"}}]}]}
+        """
+        try Data(json.utf8).write(to: root.appendingPathComponent("tour.json"))
+
+        let installed = try PackageStore().decodeAndValidate(directory: root)
+        let nugget = installed.package.checkpoints[0].nuggets[0]
+        #expect(nugget.images == ["images/valid.webp"])
+        #expect(installed.displayURLs(for: nugget) == [root.appendingPathComponent("images/valid.webp")])
+    }
+
+    @Test func healthResponseUsesMonumentIDs() throws {
+        let response = try JSONDecoder().decode(
+            PackageCatalog.HealthResponse.self,
+            from: Data(#"{"monuments":{"taj_mahal":7,"zomato_farmhouse":3,"red_fort":1}}"#.utf8)
+        )
+        #expect(Set(response.monuments.keys) == ["taj_mahal", "zomato_farmhouse", "red_fort"])
     }
 
     @Test func languageFallbackUsesEnglish() {
