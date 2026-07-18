@@ -37,11 +37,12 @@ struct AuthenticationView: View {
 
     private var brand: some View {
         HStack(spacing: 10) {
-            Image(systemName: "archway")
-                .font(.system(size: 22, weight: .semibold))
+            Image("MaraudersLogo")
+                .resizable()
+                .scaledToFit()
                 .frame(width: 44, height: 44)
-                .foregroundStyle(.white)
-                .background(Theme.primary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .accessibilityLabel("Marauders logo")
             VStack(alignment: .leading, spacing: 0) {
                 Text("MARAUDERS")
                     .font(.system(size: 17, weight: .bold, design: .rounded))

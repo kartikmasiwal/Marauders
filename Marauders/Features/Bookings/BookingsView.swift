@@ -79,6 +79,7 @@ struct TourPreparationView: View {
         }
         .navigationTitle(started ? "" : booking.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(started ? .hidden : .visible, for: .tabBar)
         .task { await prepare() }
     }
 

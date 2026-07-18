@@ -33,6 +33,14 @@ final class LocationService: NSObject, ObservableObject, @preconcurrency CLLocat
         }.min { $0.1 < $1.1 }?.0
     }
 
+    func currentPlaceName() async -> String? {
+        guard let location else { return nil }
+        let placemarks = try? await CLGeocoder().reverseGeocodeLocation(location)
+        guard let place = placemarks?.first else { return nil }
+        let area = [place.subLocality, place.locality].compactMap { $0 }
+        return area.isEmpty ? place.subAdministrativeArea ?? place.administrativeArea : area.joined(separator: ", ")
+    }
+
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorization = manager.authorizationStatus
         if authorization == .authorizedAlways || authorization == .authorizedWhenInUse { manager.startUpdatingLocation() }

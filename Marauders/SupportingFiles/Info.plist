@@ -34,7 +34,7 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Marauders connects to the tour guide backend on your local network for live questions.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Marauders uses your on-device location to select nearby outdoor checkpoints.</string>
+	<string>Marauders uses your location to show nearby events and select outdoor tour checkpoints.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Marauders records your question for the live monument guide.</string>
 	<key>UILaunchScreen</key>
