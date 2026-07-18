@@ -18,6 +18,10 @@ The implementation was derived from the supplied Monument Guide design specifica
 - `NuggetAudioPlayer` applies 0.3-second recognition entry and 1.5-second loss exit holds before local playback changes.
 - `VisitedNugget` is the SwiftData source of truth for persisted map and recap progress.
 - `ARImageTrackingView` creates reference images from the installed package and maps recognition names back to nuggets.
+- `BrowseModeView` is the camera-independent P0 path and shares engagement, playback, reveal, and progress behavior with AR.
+- `NuggetRevealCard` always uses the curated package target JPG; the live camera frame is used only for the 150 ms shutter response.
+- Simultaneous AR targets are ranked by distance with hold-duration and current-target stickiness to avoid flicker.
+- Camera-driven playback is suppressed while a live question is recording, in flight, or speaking, then resumes from the currently tracked target.
 - `AzureAnswerEngine` is the only online tour feature and applies `X-App-Key` only to `/ask`.
 - `LocationService` performs radius checks on-device and does not use GPS for indoor checkpoints.
 
