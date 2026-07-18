@@ -49,7 +49,7 @@ struct ARCameraView: View {
     @ViewBuilder
     private var cameraLayer: some View {
         if !ARImageTrackingConfiguration.isSupported {
-            browseFallback(title: "AR is unavailable", message: "Browse every story without using the camera.")
+            browseFallback(title: "AR is unavailable", message: "Use Audio Exp to enjoy every story without the camera.")
         } else if cameraAuthorized == true, !arFailed {
             ARImageTrackingView(
                 session: session,
@@ -67,9 +67,9 @@ struct ARCameraView: View {
             .animation(.snappy, value: revealedNugget?.id)
             .zIndex(revealedNugget == nil ? 0 : 4)
         } else if cameraAuthorized == false {
-            browseFallback(title: "Camera access is off", message: "You can complete the full tour in Browse Mode.", showsSettings: true)
+            browseFallback(title: "Camera access is off", message: "You can complete the full tour with Audio Exp.", showsSettings: true)
         } else if arFailed {
-            browseFallback(title: "AR could not start", message: "Continue with the same stories and progress in Browse Mode.")
+            browseFallback(title: "AR could not start", message: "Continue with the same stories and progress in Audio Exp.")
         } else {
             ProgressView("Preparing AR camera…").tint(.white).foregroundStyle(.white)
         }
@@ -85,7 +85,7 @@ struct ARCameraView: View {
                 }
                 Spacer()
                 Button(action: onBrowse) {
-                    Label("Browse", systemImage: "rectangle.grid.1x2")
+                    Label("Audio Exp", systemImage: "headphones")
                         .font(.caption.bold()).foregroundStyle(.white)
                         .padding(.horizontal, 12).padding(.vertical, 9).background(.ultraThinMaterial, in: Capsule())
                 }.accessibilityIdentifier("cameraBrowseButton")
@@ -160,10 +160,10 @@ struct ARCameraView: View {
 
     private func browseFallback(title: String, message: String, showsSettings: Bool = false) -> some View {
         VStack(spacing: 17) {
-            Image(systemName: "rectangle.grid.1x2.fill").font(.system(size: 48)).foregroundStyle(Theme.goldLight)
+            Image(systemName: "headphones").font(.system(size: 48)).foregroundStyle(Theme.goldLight)
             Text(title).font(.title2.bold()).foregroundStyle(.white)
             Text(message).foregroundStyle(.white.opacity(0.75)).multilineTextAlignment(.center)
-            Button("Browse this checkpoint", action: onBrowse)
+            Button("Open Audio Exp", action: onBrowse)
                 .buttonStyle(PrimaryButtonStyle()).frame(maxWidth: 280).accessibilityIdentifier("fallbackBrowseButton")
             if showsSettings {
                 Button("Open Camera Settings") {

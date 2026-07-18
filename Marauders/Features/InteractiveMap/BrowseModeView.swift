@@ -35,7 +35,7 @@ struct BrowseModeView: View {
                 }.padding(20)
             }
             .background(Theme.surfaceLow)
-            .navigationTitle("Browse Secrets")
+            .navigationTitle("Audio Experience")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { dismiss() }

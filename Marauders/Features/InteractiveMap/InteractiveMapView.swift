@@ -260,13 +260,13 @@ struct InteractiveMapView: View {
     }
 
     private var scanButton: some View {
-        Button { selectedTab = .scan } label: { Label("Scan", systemImage: "viewfinder") }
+        Button { selectedTab = .scan } label: { Label("AR Exp", systemImage: "viewfinder") }
             .buttonStyle(PrimaryButtonStyle())
     }
 
     private var browseButton: some View {
         Button(action: onBrowse) {
-            Label("Browse", systemImage: "rectangle.grid.1x2")
+            Label("Audio Exp", systemImage: "headphones")
                 .font(.subheadline.bold()).foregroundStyle(Theme.primary)
                 .frame(maxWidth: .infinity).frame(height: 54)
                 .background(Theme.surfaceContainer, in: RoundedRectangle(cornerRadius: 15))
