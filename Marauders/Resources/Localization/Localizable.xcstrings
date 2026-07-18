@@ -1,5 +1,161 @@
 {
   "sourceLanguage" : "en",
-  "strings" : {},
+  "strings" : {
+    "-%@" : {
+
+    },
+    "%lld" : {
+
+    },
+    "%lld chapters" : {
+
+    },
+    "+91" : {
+
+    },
+    "3" : {
+
+    },
+    "98765 43210" : {
+
+    },
+    "123456" : {
+
+    },
+    "Accessibility" : {
+
+    },
+    "Add New Ticket" : {
+
+    },
+    "ALIGN A MONUMENT DETAIL" : {
+
+    },
+    "Audio chapters" : {
+
+    },
+    "By continuing, you agree to the demo Terms and Privacy Policy." : {
+
+    },
+    "Camera access is needed" : {
+
+    },
+    "Camera unavailable" : {
+
+    },
+    "CHAPTER %lld · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "CHAPTER %1$lld · %2$@"
+          }
+        }
+      }
+    },
+    "CHAPTER %lld OF %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "CHAPTER %1$lld OF %2$lld"
+          }
+        }
+      }
+    },
+    "Check your messages." : {
+
+    },
+    "Continue with Google" : {
+
+    },
+    "Demo code: 123456" : {
+
+    },
+    "Demo Explorer" : {
+
+    },
+    "Downloads" : {
+
+    },
+    "English audio" : {
+
+    },
+    "Enter the 6-digit code sent to +91 %@." : {
+
+    },
+    "Explore" : {
+
+    },
+    "G" : {
+
+    },
+    "Listen" : {
+
+    },
+    "Live AR" : {
+
+    },
+    "LIVE AR" : {
+
+    },
+    "MARAUDERS" : {
+
+    },
+    "Marauders keeps the camera inside the app to layer tour content over the monument around you." : {
+
+    },
+    "My Tours" : {
+
+    },
+    "OFFLINE READY" : {
+
+    },
+    "Open Settings" : {
+
+    },
+    "OR" : {
+
+    },
+    "PHONE NUMBER" : {
+
+    },
+    "Preparing camera…" : {
+
+    },
+    "Profile" : {
+
+    },
+    "Sign Out" : {
+
+    },
+    "STORIES IN EVERY STEP" : {
+
+    },
+    "Three experiences are ready for your next chapter." : {
+
+    },
+    "TOUR PREFERENCES" : {
+
+    },
+    "Unlock the stories hidden inside every monument." : {
+
+    },
+    "Use a different number" : {
+
+    },
+    "Use a physical iPhone to preview the in-app AR camera experience." : {
+
+    },
+    "View Ticket" : {
+
+    },
+    "Your journey starts here." : {
+
+    },
+    "YOUR JOURNEYS" : {
+
+    }
+  },
   "version" : "1.0"
 }
