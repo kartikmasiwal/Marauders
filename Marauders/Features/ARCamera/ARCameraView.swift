@@ -6,25 +6,68 @@ import UIKit
 struct ARCameraView: View {
     @ObservedObject var session: TourSession
     @ObservedObject var audioPlayer: NuggetAudioPlayer
+    let onBrowse: () -> Void
     @StateObject private var question = VoiceQuestionService()
     @State private var cameraAuthorized: Bool?
+    @State private var arFailed = false
+    @State private var revealedNugget: Nugget?
+    @State private var frozenFrame: UIImage?
+    @State private var shutterFlash = false
+
+    private var arReady: Bool {
+        ARImageTrackingConfiguration.isSupported && cameraAuthorized == true && !arFailed
+    }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            if !ARImageTrackingConfiguration.isSupported {
-                simulatorFallback
-            } else if cameraAuthorized == true {
-                ARImageTrackingView(session: session, onFound: found, onLost: lost)
-                    .ignoresSafeArea()
-            } else if cameraAuthorized == false {
-                cameraDenied
-            } else {
-                ProgressView("Preparing AR camera…").tint(.white).foregroundStyle(.white)
+            cameraLayer
+
+            if let nugget = revealedNugget {
+                NuggetRevealCard(
+                    session: session,
+                    nugget: nugget,
+                    onReplay: { audioPlayer.replay(nugget: nugget, language: session.language, directory: session.installed.directory) },
+                    onClose: { withAnimation(.snappy) { revealedNugget = nil } }
+                )
+                .transition(.opacity)
+                .zIndex(2)
+            } else if arReady {
+                cameraOverlay.zIndex(1)
             }
-            if cameraAuthorized != false { cameraOverlay }
+
+            if shutterFlash { shutterFeedback.zIndex(5) }
         }
         .task { await requestCameraAccess() }
+    }
+
+    @ViewBuilder
+    private var cameraLayer: some View {
+        if !ARImageTrackingConfiguration.isSupported {
+            browseFallback(title: "AR is unavailable", message: "Browse every story without using the camera.")
+        } else if cameraAuthorized == true, !arFailed {
+            ARImageTrackingView(
+                session: session,
+                isSuppressed: question.suppressesTourAudio,
+                onFound: found,
+                onLost: lost,
+                onFailure: { arFailed = true }
+            )
+            .ignoresSafeArea()
+            .clipShape(RoundedRectangle(cornerRadius: revealedNugget == nil ? 0 : 90, style: .continuous))
+            .scaleEffect(revealedNugget == nil ? 1 : 0.25, anchor: .topTrailing)
+            .offset(x: revealedNugget == nil ? 0 : -16, y: revealedNugget == nil ? 0 : 64)
+            .allowsHitTesting(revealedNugget == nil)
+            .shadow(color: .black.opacity(revealedNugget == nil ? 0 : 0.32), radius: 14)
+            .animation(.snappy, value: revealedNugget?.id)
+            .zIndex(revealedNugget == nil ? 0 : 4)
+        } else if cameraAuthorized == false {
+            browseFallback(title: "Camera access is off", message: "You can complete the full tour in Browse Mode.", showsSettings: true)
+        } else if arFailed {
+            browseFallback(title: "AR could not start", message: "Continue with the same stories and progress in Browse Mode.")
+        } else {
+            ProgressView("Preparing AR camera…").tint(.white).foregroundStyle(.white)
+        }
     }
 
     private var cameraOverlay: some View {
@@ -36,55 +79,50 @@ struct ARCameraView: View {
                         .font(.headline).foregroundStyle(.white)
                 }
                 Spacer()
-                Label(session.language.uppercased(), systemImage: "globe")
-                    .font(.caption.bold()).foregroundStyle(.white)
-                    .padding(.horizontal, 11).padding(.vertical, 8).background(.ultraThinMaterial, in: Capsule())
-            }
-            .padding(20)
+                Button(action: onBrowse) {
+                    Label("Browse", systemImage: "rectangle.grid.1x2")
+                        .font(.caption.bold()).foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 9).background(.ultraThinMaterial, in: Capsule())
+                }.accessibilityIdentifier("cameraBrowseButton")
+            }.padding(20)
 
             Spacer()
-
-            if let nugget = session.activeNugget {
-                VStack(spacing: 7) {
-                    if nugget.exclusive { Text("★ GUIDE EXCLUSIVE").font(.caption2.bold()).tracking(1).foregroundStyle(Theme.goldLight) }
-                    Text(nugget.title.v(session.language)).font(.title2.bold()).foregroundStyle(.white).multilineTextAlignment(.center)
-                    Text(audioStatus).font(.caption).foregroundStyle(.white.opacity(0.75))
-                }
-                .padding(18).frame(maxWidth: .infinity)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
-                .padding(.horizontal, 20)
-            } else {
-                Text("Hold a printed target steady to reveal its story")
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                    .padding(.horizontal, 18).padding(.vertical, 12).background(.ultraThinMaterial, in: Capsule())
-            }
+            Text("Hold a printed target steady to reveal its story")
+                .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                .padding(.horizontal, 18).padding(.vertical, 12).background(.ultraThinMaterial, in: Capsule())
 
             questionStatus
-
-            Button {
-                guard let checkpoint = session.currentCheckpoint else { return }
-                audioPlayer.stop()
-                question.toggleRecording(
-                    checkpointID: checkpoint.id,
-                    monumentID: session.installed.package.monument.id,
-                    language: session.language
-                )
-            } label: {
-                Image(systemName: question.state == .recording ? "stop.fill" : "mic.fill")
-                    .font(.title2).foregroundStyle(question.state == .recording ? Theme.primary : .white)
-                    .frame(width: 72, height: 72)
-                    .background(question.state == .recording ? Color.white : Theme.primary, in: Circle())
-                    .overlay { Circle().stroke(.white, lineWidth: 4).padding(5) }
-            }
-            .accessibilityIdentifier("liveQuestionButton")
-            .padding(.top, 12).padding(.bottom, 106)
+            questionButton.padding(.top, 12).padding(.bottom, 106)
         }
         .background(LinearGradient(colors: [.black.opacity(0.55), .clear, .black.opacity(0.72)], startPoint: .top, endPoint: .bottom))
+    }
+
+    private var questionButton: some View {
+        Button {
+            guard let checkpoint = session.currentCheckpoint else { return }
+            audioPlayer.stop()
+            question.toggleRecording(
+                checkpointID: checkpoint.id,
+                monumentID: session.installed.package.monument.id,
+                language: session.language
+            )
+        } label: {
+            Image(systemName: question.state == .recording ? "stop.fill" : "mic.fill")
+                .font(.title2).foregroundStyle(question.state == .recording ? Theme.primary : .white)
+                .frame(width: 72, height: 72)
+                .background(question.state == .recording ? Color.white : Theme.primary, in: Circle())
+                .overlay { Circle().stroke(.white, lineWidth: 4).padding(5) }
+        }
+        .disabled(question.state == .thinking || question.state == .speaking || question.state == .requestingPermission)
+        .opacity(question.state == .thinking || question.state == .speaking ? 0.55 : 1)
+        .accessibilityIdentifier("liveQuestionButton")
     }
 
     @ViewBuilder
     private var questionStatus: some View {
         switch question.state {
+        case .requestingPermission:
+            Text("Preparing microphone…").statusPill(color: Theme.gold)
         case .recording:
             Text("Listening… Tap to send").statusPill(color: .red)
         case .thinking:
@@ -94,6 +132,7 @@ struct ARCameraView: View {
         case .failed(let message):
             Button {
                 guard let checkpoint = session.currentCheckpoint else { return }
+                audioPlayer.stop()
                 question.retry(checkpointID: checkpoint.id, monumentID: session.installed.package.monument.id, language: session.language)
             } label: {
                 Label(message + " Tap to retry.", systemImage: "arrow.clockwise").statusPill(color: Theme.primary)
@@ -103,54 +142,50 @@ struct ARCameraView: View {
         }
     }
 
-    private var simulatorFallback: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "arkit").font(.system(size: 52)).foregroundStyle(Theme.goldLight)
-            Text("AR target simulator").font(.title2.bold()).foregroundStyle(.white)
-            Text("Select a target below. Use a physical iPhone for image tracking.").foregroundStyle(.white.opacity(0.75)).multilineTextAlignment(.center)
-            ScrollView {
-                VStack(spacing: 10) {
-                    ForEach(session.installed.package.checkpoints) { checkpoint in
-                        ForEach(checkpoint.nuggets) { nugget in
-                            Button { found(checkpoint, nugget) } label: {
-                                HStack { Text(nugget.title.v(session.language)); Spacer(); Image(systemName: "viewfinder") }
-                                    .padding(14).foregroundStyle(Theme.ink).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
-                            }
-                        }
-                    }
-                }
-            }.frame(maxHeight: 280)
-        }.padding(28).padding(.bottom, 120)
+    private var shutterFeedback: some View {
+        ZStack {
+            if let frozenFrame {
+                Image(uiImage: frozenFrame).resizable().scaledToFill().ignoresSafeArea()
+            }
+            Color.white.opacity(0.88).ignoresSafeArea()
+        }.allowsHitTesting(false)
     }
 
-    private var cameraDenied: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "camera.fill").font(.system(size: 48)).foregroundStyle(Theme.goldLight)
-            Text("Camera access is needed").font(.title2.bold()).foregroundStyle(.white)
-            Text("Enable camera access to recognize the printed monument targets.")
-                .foregroundStyle(.white.opacity(0.75)).multilineTextAlignment(.center)
-            Button("Open Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+    private func browseFallback(title: String, message: String, showsSettings: Bool = false) -> some View {
+        VStack(spacing: 17) {
+            Image(systemName: "rectangle.grid.1x2.fill").font(.system(size: 48)).foregroundStyle(Theme.goldLight)
+            Text(title).font(.title2.bold()).foregroundStyle(.white)
+            Text(message).foregroundStyle(.white.opacity(0.75)).multilineTextAlignment(.center)
+            Button("Browse this checkpoint", action: onBrowse)
+                .buttonStyle(PrimaryButtonStyle()).frame(maxWidth: 280).accessibilityIdentifier("fallbackBrowseButton")
+            if showsSettings {
+                Button("Open Camera Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }.foregroundStyle(.white)
             }
-            .buttonStyle(PrimaryButtonStyle()).frame(maxWidth: 260)
         }.padding(30).padding(.bottom, 100)
     }
 
-    private var audioStatus: String {
-        switch audioPlayer.state {
-        case .entering: "Target locked · preparing story"
-        case .playing: "Playing local audio"
-        case .exiting: "Keep the target in view"
-        case .idle: "Ready"
+    private func found(_ checkpoint: Checkpoint, _ nugget: Nugget, _ frame: UIImage?) {
+        guard !question.suppressesTourAudio else { return }
+        session.select(checkpoint: checkpoint, nugget: nugget)
+        audioPlayer.targetFound(nugget: nugget, language: session.language, directory: session.installed.directory)
+        guard revealedNugget?.id != nugget.id else { return }
+        frozenFrame = frame
+        shutterFlash = true
+        Task {
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            shutterFlash = false
+            withAnimation(.easeInOut(duration: 0.3)) { revealedNugget = nugget }
+            frozenFrame = nil
         }
     }
 
-    private func found(_ checkpoint: Checkpoint, _ nugget: Nugget) {
-        session.select(checkpoint: checkpoint, nugget: nugget)
-        audioPlayer.targetFound(nugget: nugget, language: session.language, directory: session.installed.directory)
+    private func lost(_ nugget: Nugget) {
+        guard !question.suppressesTourAudio else { return }
+        audioPlayer.targetLost(nuggetID: nugget.id)
     }
-
-    private func lost(_ nugget: Nugget) { audioPlayer.targetLost(nuggetID: nugget.id) }
 
     private func requestCameraAccess() async {
         guard ARImageTrackingConfiguration.isSupported else { return }

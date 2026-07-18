@@ -11,6 +11,8 @@ Built as a local-first prototype, the app requires no API keys or backend servic
 - Downloadable ZIP tour packages decoded from the deployed backend contract
 - Local illustrated maps driven by package checkpoint order and normalized coordinates
 - ARKit image tracking that resolves printed targets to local audio nuggets
+- Camera-free Browse Mode that exposes the same nuggets, playback, reveal cards, and progress semantics
+- Curated target-image reveal cards with shutter feedback and a live-camera thumbnail
 - Debounced offline audio playback that tolerates brief target occlusion
 - Persistent SwiftData progress for checkpoint state and secrets-found counts
 - English/Hindi package selection, on-device GPS checkpoint resolution, and live voice Q&A
@@ -92,9 +94,11 @@ Documentation/           Design implementation notes
 
 ## Camera and AR
 
-The Scan tab uses `ARImageTrackingConfiguration`. Package target JPGs become `ARReferenceImage` instances at runtime; recognition selects the matching nugget and drives the debounced local audio state machine. On the simulator, a target picker exercises the same selection and playback path.
+The Scan tab uses `ARImageTrackingConfiguration`. Package target JPGs become `ARReferenceImage` instances at runtime; recognition selects the strongest stable target and drives the debounced local audio state machine. A 150 ms frozen-frame flash confirms recognition, then the bundled reference image becomes the full-quality reveal card while the live camera shrinks to a corner thumbnail.
 
-The microphone records a 16 kHz mono M4A question, POSTs it to `/ask`, and plays the returned base64 audio without blocking the UI. Missing configuration and network failures surface retryable messages.
+Browse Mode is always available from the map and camera fallback states. It uses the same package nuggets and audio player as AR, and only marks a nugget visited after the user taps it and playback starts. This makes the complete tour available when camera permission is denied, AR initialization fails, or no printed target is available.
+
+The microphone records a 16 kHz mono M4A question, POSTs it to `/ask`, and plays the returned base64 audio without blocking the UI. Camera-triggered audio is suppressed from permission request through spoken-answer completion, so an answer remains bound to its original checkpoint and cannot be interrupted by a new target. Missing configuration and network failures surface retryable messages.
 
 ## Verification
 

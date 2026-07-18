@@ -3,8 +3,10 @@ import SwiftUI
 
 struct ARImageTrackingView: UIViewRepresentable {
     let session: TourSession
-    let onFound: (Checkpoint, Nugget) -> Void
+    let isSuppressed: Bool
+    let onFound: (Checkpoint, Nugget, UIImage?) -> Void
     let onLost: (Nugget) -> Void
+    let onFailure: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -13,30 +15,58 @@ struct ARImageTrackingView: UIViewRepresentable {
         view.delegate = context.coordinator
         view.session.delegate = context.coordinator
         view.automaticallyUpdatesLighting = true
-        context.coordinator.run(on: view)
+        context.coordinator.attach(view)
         return view
     }
 
-    func updateUIView(_ uiView: ARSCNView, context: Context) {}
+    func updateUIView(_ uiView: ARSCNView, context: Context) {
+        context.coordinator.update(parent: self)
+    }
 
     static func dismantleUIView(_ uiView: ARSCNView, coordinator: Coordinator) {
         uiView.session.pause()
     }
 
     final class Coordinator: NSObject, ARSCNViewDelegate, ARSessionDelegate {
-        private let parent: ARImageTrackingView
+        private struct Candidate {
+            let value: (Checkpoint, Nugget)
+            var distance: Float
+            let heldSince: Date
+        }
+
+        private var parent: ARImageTrackingView
+        private weak var view: ARSCNView?
         private var nuggetByTarget: [String: (Checkpoint, Nugget)] = [:]
-        private var trackedTargets = Set<String>()
+        private var candidates: [String: Candidate] = [:]
+        private var selectedTargetID: String?
+        private var suppressed: Bool
 
         init(parent: ARImageTrackingView) {
             self.parent = parent
+            suppressed = parent.isSuppressed
             super.init()
+            indexTargets()
+        }
+
+        func attach(_ view: ARSCNView) {
+            self.view = view
+            run(on: view)
+        }
+
+        func update(parent: ARImageTrackingView) {
+            self.parent = parent
+            let wasSuppressed = suppressed
+            suppressed = parent.isSuppressed
+            if wasSuppressed, !suppressed { emitCurrentSelection() }
+        }
+
+        private func indexTargets() {
             for checkpoint in parent.session.installed.package.checkpoints {
                 for nugget in checkpoint.nuggets { nuggetByTarget[nugget.targetImageId] = (checkpoint, nugget) }
             }
         }
 
-        func run(on view: ARSCNView) {
+        private func run(on view: ARSCNView) {
             let references = Set(nuggetByTarget.compactMap { targetID, value -> ARReferenceImage? in
                 let url = parent.session.installed.targetURL(for: value.1)
                 guard let image = UIImage(contentsOfFile: url.path)?.cgImage else { return nil }
@@ -44,7 +74,10 @@ struct ARImageTrackingView: UIViewRepresentable {
                 reference.name = targetID
                 return reference
             })
-            guard !references.isEmpty else { return }
+            guard !references.isEmpty else {
+                Task { @MainActor in self.parent.onFailure() }
+                return
+            }
             let configuration = ARImageTrackingConfiguration()
             configuration.trackingImages = references
             configuration.maximumNumberOfTrackedImages = min(references.count, 4)
@@ -66,26 +99,73 @@ struct ARImageTrackingView: UIViewRepresentable {
         }
 
         func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
-            for case let anchor as ARImageAnchor in anchors {
-                guard let name = anchor.referenceImage.name, let value = nuggetByTarget[name] else { continue }
-                if anchor.isTracked, trackedTargets.insert(name).inserted {
-                    Task { @MainActor in self.parent.onFound(value.0, value.1) }
-                } else if !anchor.isTracked, trackedTargets.remove(name) != nil {
-                    Task { @MainActor in self.parent.onLost(value.1) }
-                }
-            }
+            updateCandidates(anchors)
         }
 
         func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
-            self.session(session, didUpdate: anchors)
+            updateCandidates(anchors)
         }
 
         func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
             for case let anchor as ARImageAnchor in anchors {
-                guard let name = anchor.referenceImage.name,
-                      trackedTargets.remove(name) != nil,
-                      let nugget = nuggetByTarget[name]?.1 else { continue }
+                if let name = anchor.referenceImage.name { candidates[name] = nil }
+            }
+            chooseSelection()
+        }
+
+        func session(_ session: ARSession, didFailWithError error: Error) {
+            Task { @MainActor in self.parent.onFailure() }
+        }
+
+        private func updateCandidates(_ anchors: [ARAnchor]) {
+            for case let anchor as ARImageAnchor in anchors {
+                guard let name = anchor.referenceImage.name, let value = nuggetByTarget[name] else { continue }
+                if anchor.isTracked {
+                    let translation = anchor.transform.columns.3
+                    let distance = simd_length(SIMD3<Float>(translation.x, translation.y, translation.z))
+                    let heldSince = candidates[name]?.heldSince ?? .now
+                    candidates[name] = Candidate(value: value, distance: max(distance, 0.05), heldSince: heldSince)
+                } else {
+                    candidates[name] = nil
+                }
+            }
+            chooseSelection()
+        }
+
+        private func chooseSelection() {
+            let previous = selectedTargetID
+            let ranked = candidates.sorted { lhs, rhs in
+                let lhsScore = score(lhs.value)
+                let rhsScore = score(rhs.value)
+                if abs(lhsScore - rhsScore) < 0.12 { return lhs.value.heldSince < rhs.value.heldSince }
+                return lhsScore > rhsScore
+            }
+            var next = ranked.first?.key
+
+            if let previous, let current = candidates[previous], let strongest = ranked.first?.value {
+                let currentScore = score(current)
+                let strongestScore = score(strongest)
+                if currentScore >= strongestScore * 0.9 { next = previous }
+            }
+            guard next != previous else { return }
+            selectedTargetID = next
+
+            if let previous, let nugget = nuggetByTarget[previous]?.1, !suppressed {
                 Task { @MainActor in self.parent.onLost(nugget) }
+            }
+            emitCurrentSelection()
+        }
+
+        private func score(_ candidate: Candidate) -> Float {
+            let holdBonus = min(Float(Date().timeIntervalSince(candidate.heldSince)) * 0.06, 0.25)
+            return (1 / candidate.distance) + holdBonus
+        }
+
+        private func emitCurrentSelection() {
+            guard !suppressed, let selectedTargetID, let value = nuggetByTarget[selectedTargetID] else { return }
+            Task { @MainActor in
+                let frame = self.view?.snapshot()
+                self.parent.onFound(value.0, value.1, frame)
             }
         }
     }

@@ -5,6 +5,7 @@ import Foundation
 final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDelegate, AVAudioPlayerDelegate {
     enum State: Equatable {
         case idle
+        case requestingPermission
         case recording
         case thinking
         case speaking
@@ -18,6 +19,13 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
     private var player: AVAudioPlayer?
     private let engine: any AnswerEngine
 
+    var suppressesTourAudio: Bool {
+        switch state {
+        case .requestingPermission, .recording, .thinking, .speaking: true
+        case .idle, .failed: false
+        }
+    }
+
     init(engine: any AnswerEngine = AzureAnswerEngine()) {
         self.engine = engine
         super.init()
@@ -27,6 +35,7 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
         if state == .recording {
             stopAndAsk(checkpointID: checkpointID, monumentID: monumentID, language: language)
         } else {
+            state = .requestingPermission
             Task { await startRecording() }
         }
     }
