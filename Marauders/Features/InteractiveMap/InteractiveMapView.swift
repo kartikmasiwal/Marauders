@@ -10,7 +10,6 @@ struct InteractiveMapView: View {
     @Binding var selectedTab: TourContainerView.TourTab
     let onBrowse: () -> Void
     let onSelectCheckpoint: (Checkpoint) -> Void
-    let onCompleteCheckpoint: (Checkpoint) -> Void
     @State private var scale: CGFloat = 1
     @State private var lastScale: CGFloat = 1
     @State private var offset: CGSize = .zero
@@ -68,7 +67,11 @@ struct InteractiveMapView: View {
                 completionBurst = true
                 Task {
                     try? await Task.sleep(for: .seconds(1.8))
-                    withAnimation(.easeOut(duration: 0.6)) { completionBurst = false }
+                    if reduceMotion {
+                        completionBurst = false
+                    } else {
+                        withAnimation(.easeOut(duration: 0.6)) { completionBurst = false }
+                    }
                 }
             }
             .sheet(item: $presentedTajChapter, onDismiss: handleTajChapterDismissal) { chapter in
@@ -81,16 +84,12 @@ struct InteractiveMapView: View {
                     audioPlayer: audioPlayer,
                     ambientPlayer: ambientPlayer,
                     onOpenAR: {
-                        if let targetID = chapter.arAssetName,
-                           let packageCheckpoint = ordered.first(where: { checkpoint in
-                               checkpoint.nuggets.contains { $0.effectiveTargetImageIds.contains(targetID) }
-                           }) {
-                            session.select(checkpoint: packageCheckpoint)
-                        }
+                        selectPackageCheckpoint(for: chapter)
                         pendingTajDestination = .ar
                         presentedTajChapter = nil
                     },
                     onOpenBrowse: {
+                        selectPackageCheckpoint(for: chapter)
                         pendingTajDestination = .browse
                         presentedTajChapter = nil
                     }
@@ -104,7 +103,6 @@ struct InteractiveMapView: View {
                     checkpoint: checkpoint,
                     language: session.language,
                     visitedCount: visitedCount(checkpoint),
-                    isComplete: isCompleted(checkpoint),
                     onOpenAR: {
                         pendingTajDestination = .ar
                         presentedCheckpoint = nil
@@ -112,8 +110,7 @@ struct InteractiveMapView: View {
                     onOpenBrowse: {
                         pendingTajDestination = .browse
                         presentedCheckpoint = nil
-                    },
-                    onComplete: { onCompleteCheckpoint(checkpoint) }
+                    }
                 )
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
@@ -140,6 +137,16 @@ struct InteractiveMapView: View {
         narrator.stop()
         ambientPlayer.setDucked(false, for: .checkpointSpeech)
         performPendingTajDestination()
+    }
+
+    private func selectPackageCheckpoint(for chapter: TajMapCheckpoint) {
+        let checkpoint = ordered.first { $0.id == TajAIInsightStore.backendCheckpointID(forChapter: chapter.id) }
+            ?? chapter.arAssetName.flatMap { targetID in
+                ordered.first { checkpoint in
+                    checkpoint.nuggets.contains { $0.effectiveTargetImageIds.contains(targetID) }
+                }
+            }
+        if let checkpoint { session.select(checkpoint: checkpoint) }
     }
 
     private func tajRoute(in size: CGSize) -> some View {
@@ -247,54 +254,69 @@ struct InteractiveMapView: View {
         .allowsHitTesting(false)
     }
 
+    @ViewBuilder
     private func dynamicTrail(in size: CGSize) -> some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
-            let elapsed = timeline.date.timeIntervalSinceReferenceDate
-            let travel = elapsed.truncatingRemainder(dividingBy: 2.4) / 2.4
-            let breathe = 0.78 + 0.16 * (0.5 + 0.5 * sin(elapsed * 1.8))
-
-            Canvas { context, _ in
-                guard ordered.count > 1 else { return }
-                for index in 0..<(ordered.count - 1) {
-                    let source = ordered[index]
-                    let destination = ordered[index + 1]
-                    let start = point(for: source, in: size)
-                    let end = point(for: destination, in: size)
-                    var segment = Path()
-                    segment.move(to: start)
-                    segment.addLine(to: end)
-
-                    let sourceComplete = isCompleted(source)
-                    let destinationReached = isCompleted(destination) || destination.id == session.currentCheckpointID
-                    let completed = sourceComplete && destinationReached
-                    let active = sourceComplete && !destinationReached
-
-                    if completed || allCheckpointsCompleted {
-                        context.drawLayer { layer in
-                            layer.addFilter(.shadow(color: Theme.gold.opacity(0.55), radius: 5))
-                            layer.stroke(segment, with: .color(Theme.gold.opacity(breathe)), style: StrokeStyle(lineWidth: 4, lineCap: .round, dash: [6, 8]))
-                        }
-                        drawParticle(context: context, from: start, to: end, progress: travel, opacity: 0.62)
-                    } else if active {
-                        context.drawLayer { layer in
-                            layer.addFilter(.shadow(color: Theme.goldLight.opacity(0.8), radius: 7))
-                            layer.stroke(segment, with: .color(Theme.goldLight), style: StrokeStyle(lineWidth: 4, lineCap: .round, dash: [6, 8], dashPhase: -CGFloat(elapsed * 18)))
-                        }
-                        drawParticle(context: context, from: start, to: end, progress: travel, opacity: 1)
-                        drawParticle(context: context, from: start, to: end, progress: (travel + 0.34).truncatingRemainder(dividingBy: 1), opacity: 0.55)
-                    } else {
-                        context.stroke(segment, with: .color(Theme.mutedInk.opacity(0.18)), style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [5, 9]))
-                    }
+        Group {
+            if reduceMotion {
+                dynamicTrailLayer(in: size, elapsed: nil)
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+                    dynamicTrailLayer(in: size, elapsed: timeline.date.timeIntervalSinceReferenceDate)
                 }
             }
         }
         .frame(width: size.width, height: size.height)
         .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func dynamicTrailLayer(in size: CGSize, elapsed: TimeInterval?) -> some View {
+        let travel = elapsed.map { $0.truncatingRemainder(dividingBy: 2.4) / 2.4 }
+        let breathe = elapsed.map { 0.78 + 0.16 * (0.5 + 0.5 * sin($0 * 1.8)) } ?? 0.86
+
+        return Canvas { context, _ in
+            guard ordered.count > 1 else { return }
+            for index in 0..<(ordered.count - 1) {
+                let source = ordered[index]
+                let destination = ordered[index + 1]
+                let start = point(for: source, in: size)
+                let end = point(for: destination, in: size)
+                var segment = Path()
+                segment.move(to: start)
+                segment.addLine(to: end)
+
+                let sourceComplete = isCompleted(source)
+                let destinationReached = isCompleted(destination) || destination.id == session.currentCheckpointID
+                let completed = sourceComplete && destinationReached
+                let active = sourceComplete && !destinationReached
+
+                if completed || allCheckpointsCompleted {
+                    context.drawLayer { layer in
+                        layer.addFilter(.shadow(color: Theme.gold.opacity(0.55), radius: 5))
+                        layer.stroke(segment, with: .color(Theme.gold.opacity(breathe)), style: StrokeStyle(lineWidth: 4, lineCap: .round, dash: [6, 8]))
+                    }
+                    if let travel {
+                        drawParticle(context: context, from: start, to: end, progress: travel, opacity: 0.62)
+                    }
+                } else if active {
+                    context.drawLayer { layer in
+                        layer.addFilter(.shadow(color: Theme.goldLight.opacity(0.8), radius: 7))
+                        layer.stroke(segment, with: .color(Theme.goldLight), style: StrokeStyle(lineWidth: 4, lineCap: .round, dash: [6, 8], dashPhase: -CGFloat((elapsed ?? 0) * 18)))
+                    }
+                    if let travel {
+                        drawParticle(context: context, from: start, to: end, progress: travel, opacity: 1)
+                        drawParticle(context: context, from: start, to: end, progress: (travel + 0.34).truncatingRemainder(dividingBy: 1), opacity: 0.55)
+                    }
+                } else {
+                    context.stroke(segment, with: .color(Theme.mutedInk.opacity(0.18)), style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [5, 9]))
+                }
+            }
+        }
     }
 
     @ViewBuilder
     private func checkpoints(in size: CGSize, viewport: CGSize) -> some View {
-        if isZomatoJourney {
+        if isZomatoJourney, !reduceMotion {
             TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
                 let pulse = timeline.date.timeIntervalSinceReferenceDate
                 checkpointLayer(in: size, viewport: viewport, pulse: pulse)
@@ -337,6 +359,12 @@ struct InteractiveMapView: View {
                     }
                 )
                 .position(x: size.width * checkpoint.mapPosition.x, y: size.height * checkpoint.mapPosition.y)
+                .accessibilityLabel("Checkpoint \(index + 1) of \(ordered.count), \(checkpoint.name.v(session.language))")
+                .accessibilityValue(
+                    Text(state.accessibilityValue)
+                        + Text(", \(visitedCount(checkpoint)) of \(checkpoint.nuggets.count) stories visited")
+                )
+                .accessibilityHint(state == .locked ? "Complete the previous checkpoint to unlock" : "Opens checkpoint details")
                 .accessibilityIdentifier("checkpoint_\(checkpoint.id)")
             }
         }.frame(width: size.width, height: size.height)
@@ -344,7 +372,7 @@ struct InteractiveMapView: View {
 
     @ViewBuilder
     private func completionShimmer(in size: CGSize) -> some View {
-        if isZomatoJourney, completionBurst {
+        if isZomatoJourney, completionBurst, !reduceMotion {
             TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
                 let progress = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.5) / 1.5
                 LinearGradient(
@@ -429,11 +457,12 @@ struct InteractiveMapView: View {
 
     private func select(_ checkpoint: Checkpoint, state: CheckpointVisualState, viewport: CGSize, mapSize: CGSize) {
         guard state != .locked else { return }
-        withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+        let selection = {
             onSelectCheckpoint(checkpoint)
             presentedCheckpoint = checkpoint
             focus(checkpoint, viewport: viewport, mapSize: mapSize)
         }
+        if reduceMotion { selection() } else { withAnimation(.spring(response: 0.42, dampingFraction: 0.86), selection) }
     }
 
     private func zoom(_ amount: CGFloat, viewport: CGSize, mapSize: CGSize) {
@@ -492,6 +521,7 @@ private enum CheckpointVisualState: Equatable {
     case locked, available, current, visited
     var color: Color { switch self { case .locked: .gray; case .available: Theme.gold; case .current: Theme.primary; case .visited: Theme.teal } }
     var icon: String { switch self { case .locked: "lock.fill"; case .available: "circle.fill"; case .current: "location.fill"; case .visited: "checkmark" } }
+    var accessibilityValue: LocalizedStringKey { switch self { case .locked: "Locked"; case .available: "Available"; case .current: "Current"; case .visited: "Visited" } }
 }
 
 private enum TajDestination { case ar, browse }
@@ -500,11 +530,10 @@ private struct CheckpointDetailSheet: View {
     let checkpoint: Checkpoint
     let language: String
     let visitedCount: Int
-    let isComplete: Bool
     let onOpenAR: () -> Void
     let onOpenBrowse: () -> Void
-    let onComplete: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         NavigationStack {
@@ -536,7 +565,7 @@ private struct CheckpointDetailSheet: View {
                     .padding(18)
                     .heritageCard()
 
-                    HStack(spacing: 8) {
+                    actionLayout {
                         Button(action: onOpenBrowse) {
                             actionLabel("Stories", icon: "headphones")
                         }
@@ -550,13 +579,6 @@ private struct CheckpointDetailSheet: View {
                         .buttonStyle(.borderedProminent)
                         .tint(Theme.primary)
 
-                        Button(action: onComplete) {
-                            actionLabel(isComplete ? "Completed" : "Complete", icon: isComplete ? "checkmark.seal.fill" : "checkmark.circle")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Theme.teal)
-                        .disabled(isComplete)
-                        .accessibilityLabel(isComplete ? "Checkpoint completed" : "Complete checkpoint")
                     }
                 }
                 .padding(20)
@@ -573,7 +595,15 @@ private struct CheckpointDetailSheet: View {
         }
     }
 
-    private func actionLabel(_ title: String, icon: String) -> some View {
+    private var actionLayout: AnyLayout {
+        if dynamicTypeSize.isAccessibilitySize {
+            AnyLayout(VStackLayout(spacing: 8))
+        } else {
+            AnyLayout(HStackLayout(spacing: 8))
+        }
+    }
+
+    private func actionLabel(_ title: LocalizedStringKey, icon: String) -> some View {
         VStack(spacing: 4) {
             Image(systemName: icon).font(.system(size: 16, weight: .semibold))
             Text(title).font(.caption2.bold()).lineLimit(1).minimumScaleFactor(0.75)

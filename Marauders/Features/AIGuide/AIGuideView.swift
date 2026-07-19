@@ -1,15 +1,17 @@
 import SwiftUI
+import UIKit
 
 struct AIGuideView: View {
     let context: AIGuideContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var chat = AIGuideChatService()
     @State private var draft = ""
     @State private var requestTask: Task<Void, Never>?
     @FocusState private var isComposerFocused: Bool
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !chat.isLoading && !API.appKey.isEmpty
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !chat.isLoading
     }
 
     var body: some View {
@@ -18,7 +20,6 @@ struct AIGuideView: View {
                 ScrollView {
                     LazyVStack(spacing: 14) {
                         guideHeader
-                        if API.appKey.isEmpty { configurationNotice }
                         ForEach(chat.messages) { message in
                             messageBubble(message)
                                 .id(message.id)
@@ -31,18 +32,31 @@ struct AIGuideView: View {
                 .scrollDismissesKeyboard(.interactively)
                 .background(Theme.surfaceLow)
                 .onChange(of: chat.messages.count) { _, _ in scrollToBottom(proxy) }
-                .onChange(of: chat.isLoading) { _, _ in scrollToBottom(proxy) }
+                .onChange(of: chat.isLoading) { _, isLoading in
+                    scrollToBottom(proxy)
+                    if isLoading { announce(String(localized: "AI Guide is thinking")) }
+                }
+                .onChange(of: chat.messages.last) { _, message in
+                    guard let message, message.role == .guide else { return }
+                    announce(String(localized: "AI Guide replied. \(message.text)"))
+                }
+                .onChange(of: chat.errorMessage) { _, error in
+                    if let error { announce(String(localized: "AI Guide error. \(error)")) }
+                }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { composer }
             .navigationTitle("AI Guide")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button("Done") {
+                        cancelRequest()
+                        dismiss()
+                    }
                 }
             }
         }
-        .onDisappear { requestTask?.cancel() }
+        .onDisappear { cancelRequest() }
     }
 
     private var guideHeader: some View {
@@ -66,21 +80,10 @@ struct AIGuideView: View {
         .heritageCard()
     }
 
-    private var configurationNotice: some View {
-        Label(
-            "AI Guide needs MARAUDERS_APP_KEY in Secrets.xcconfig before it can answer questions.",
-            systemImage: "key.fill"
-        )
-        .font(.subheadline).foregroundStyle(Theme.primary)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(Theme.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
-    }
-
     private func messageBubble(_ message: AIGuideChatService.Message) -> some View {
         HStack {
             if message.role == .user { Spacer(minLength: 44) }
-            Text(message.text)
+            Text(verbatim: message.text)
                 .font(.body)
                 .foregroundStyle(message.role == .user ? .white : Theme.ink)
                 .padding(.horizontal, 14).padding(.vertical, 11)
@@ -96,7 +99,7 @@ struct AIGuideView: View {
             if message.role == .guide { Spacer(minLength: 44) }
         }
         .frame(maxWidth: .infinity)
-        .accessibilityLabel(message.role == .user ? "You: \(message.text)" : "AI Guide: \(message.text)")
+        .accessibilityLabel(messageAccessibilityLabel(message))
     }
 
     private var thinkingBubble: some View {
@@ -108,10 +111,16 @@ struct AIGuideView: View {
         }
         .padding(14)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("AI Guide is looking through the local guide")
     }
 
     private func errorBubble(_ error: String) -> some View {
-        Label(error, systemImage: "exclamationmark.triangle.fill")
+        Label {
+            Text(verbatim: error)
+        } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+        }
             .font(.subheadline).foregroundStyle(Theme.primary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
@@ -153,14 +162,38 @@ struct AIGuideView: View {
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
-        withAnimation(Motion.quick) {
+        let scroll = {
             if chat.isLoading {
                 proxy.scrollTo("thinking", anchor: .bottom)
-            } else if let message = chat.messages.last {
-                proxy.scrollTo(message.id, anchor: .bottom)
             } else if chat.errorMessage != nil {
                 proxy.scrollTo("error", anchor: .bottom)
+            } else if let message = chat.messages.last {
+                proxy.scrollTo(message.id, anchor: .bottom)
             }
         }
+        if reduceMotion {
+            scroll()
+        } else {
+            withAnimation(Motion.quick, scroll)
+        }
+    }
+
+    private func cancelRequest() {
+        requestTask?.cancel()
+        requestTask = nil
+        chat.cancel()
+    }
+
+    private func messageAccessibilityLabel(_ message: AIGuideChatService.Message) -> Text {
+        if message.role == .user {
+            Text("You: \(Text(verbatim: message.text))")
+        } else {
+            Text("AI Guide: \(Text(verbatim: message.text))")
+        }
+    }
+
+    private func announce(_ message: String) {
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        UIAccessibility.post(notification: .announcement, argument: message)
     }
 }

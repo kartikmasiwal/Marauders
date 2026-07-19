@@ -13,6 +13,7 @@ struct TajCheckpointDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showARUnavailable = false
     @State private var showGuideChat = false
     @State private var seekPosition = 0.0
@@ -23,8 +24,8 @@ struct TajCheckpointDetailView: View {
     }
 
     var body: some View {
-        let loaded = AnyView(navigationContent.task(id: chapterID) {
-            if let chapter { await insights.load(for: chapter) }
+        let loaded = AnyView(navigationContent.task(id: "\(chapterID).\(language)") {
+            if let chapter { await insights.load(for: chapter, language: language) }
         })
         let observed = AnyView(loaded.onChange(of: narrator.state) { oldState, newState in
             narrationStateChanged(oldState, newState)
@@ -91,13 +92,14 @@ struct TajCheckpointDetailView: View {
                     .font(.caption.bold()).tracking(1)
                     .foregroundStyle(chapter.status.color)
                 Spacer()
-                Text(chapter.status.label.uppercased())
+                Text(chapter.status.label)
+                    .textCase(.uppercase)
                     .font(.caption2.bold()).tracking(0.8)
                     .foregroundStyle(chapter.status.color)
                     .padding(.horizontal, 9).padding(.vertical, 6)
                     .background(chapter.status.color.opacity(0.12), in: Capsule())
             }
-            Text(chapter.name)
+            Text(verbatim: chapter.name)
                 .font(.system(size: 30, weight: .bold, design: .rounded))
                 .foregroundStyle(Theme.ink)
             Text("A location-specific chapter in your Taj Mahal route.")
@@ -107,10 +109,10 @@ struct TajCheckpointDetailView: View {
         .heritageCard()
     }
 
-    private func informationCard(title: String, icon: String, text: String) -> some View {
+    private func informationCard(title: LocalizedStringKey, icon: String, text: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Label(title, systemImage: icon).font(.headline).foregroundStyle(Theme.primary)
-            Text(text).foregroundStyle(Theme.mutedInk).lineSpacing(4)
+            Text(verbatim: text).foregroundStyle(Theme.mutedInk).lineSpacing(4)
         }
         .padding(18)
         .heritageCard()
@@ -120,24 +122,23 @@ struct TajCheckpointDetailView: View {
     private func aiInformation(_ chapter: TajMapCheckpoint) -> some View {
         VStack(alignment: .leading, spacing: 11) {
             HStack {
-                Label("Offline guide note", systemImage: "book.closed.fill").font(.headline).foregroundStyle(Theme.primary)
-                Spacer()
-                Text("AVAILABLE OFFLINE")
-                    .font(.system(size: 9, weight: .bold)).tracking(0.7).foregroundStyle(Theme.teal)
+                Label("Guide insight", systemImage: "book.closed.fill").font(.headline).foregroundStyle(Theme.primary)
             }
-            switch insights.state(for: chapter.id) {
+            switch insights.state(for: chapter.id, language: language) {
             case .idle, .loading:
-                HStack { ProgressView(); Text("Preparing offline guide note…") }.foregroundStyle(Theme.mutedInk)
+                HStack { ProgressView(); Text("Preparing guide insight…") }.foregroundStyle(Theme.mutedInk)
             case .success(let text):
-                Text(text).foregroundStyle(Theme.mutedInk).lineSpacing(4)
-                Text("This curated local fallback is separate from live AI questions, which are available in mapped AR chapters.")
+                Text(verbatim: text).foregroundStyle(Theme.mutedInk).lineSpacing(4)
+                Text("Insights may be generated remotely and cached on this device. When that is unavailable, the bundled chapter summary is used.")
                     .font(.caption).foregroundStyle(Theme.mutedInk.opacity(0.8))
-            case .failure(let message):
-                Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Theme.primary)
-                Button("Retry") { Task { await insights.retry(for: chapter) } }
+            case .failure:
+                Label("Guide insight is unavailable right now.", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Theme.primary)
+                Button("Retry") { Task { await insights.retry(for: chapter, language: language) } }
                     .buttonStyle(.bordered)
             }
             Button {
+                stopCompetingAudio()
                 showGuideChat = true
             } label: {
                 Label("Ask the guide a question", systemImage: "bubble.left.and.text.bubble.right")
@@ -151,12 +152,20 @@ struct TajCheckpointDetailView: View {
         .padding(18)
         .heritageCard()
         .sheet(isPresented: $showGuideChat) {
-            GuideChatView(
+            AIGuideView(context: AIGuideContext(
                 monumentID: "taj_mahal",
+                monumentName: "Taj Mahal",
                 checkpointID: TajAIInsightStore.backendCheckpointID(forChapter: chapter.id),
+                checkpointName: chapter.name,
                 language: language
-            )
+            ))
+            .onAppear(perform: stopCompetingAudio)
         }
+    }
+
+    private func stopCompetingAudio() {
+        stopNarration()
+        audioPlayer.stop()
     }
 
     private func detailGrid(_ chapter: TajMapCheckpoint) -> some View {
@@ -168,12 +177,12 @@ struct TajCheckpointDetailView: View {
         }
     }
 
-    private func detailRow(_ title: String, _ icon: String, _ text: String) -> some View {
+    private func detailRow(_ title: LocalizedStringKey, _ icon: String, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 13) {
             Image(systemName: icon).foregroundStyle(Theme.gold).frame(width: 24)
             VStack(alignment: .leading, spacing: 5) {
                 Text(title).font(.subheadline.bold()).foregroundStyle(Theme.ink)
-                Text(text).font(.subheadline).foregroundStyle(Theme.mutedInk)
+                Text(verbatim: text).font(.subheadline).foregroundStyle(Theme.mutedInk)
             }
             Spacer(minLength: 0)
         }
@@ -187,8 +196,8 @@ struct TajCheckpointDetailView: View {
                 Label("Audio Experience", systemImage: "waveform.circle.fill")
                     .font(.subheadline.bold()).foregroundStyle(Theme.primary)
                 Spacer()
-                speedButton("0.8x", multiplier: 0.8)
-                speedButton("1.2x", multiplier: 1.2)
+                speedButton("0.8x", accessibilityLabel: "0.8x playback speed", multiplier: 0.8)
+                speedButton("1.2x", accessibilityLabel: "1.2x playback speed", multiplier: 1.2)
             }
             Slider(
                 value: Binding(
@@ -206,9 +215,9 @@ struct TajCheckpointDetailView: View {
             .accessibilityLabel("Narration position")
             .accessibilityValue("\(Int((isSeeking ? seekPosition : narrator.progress) * 100)) percent")
             HStack {
-                Text(time(isSeeking ? narrator.estimatedDuration * seekPosition : narrator.elapsed))
+                Text(verbatim: time(isSeeking ? narrator.estimatedDuration * seekPosition : narrator.elapsed))
                 Spacer()
-                Text(time(narrator.estimatedDuration))
+                Text(verbatim: time(narrator.estimatedDuration))
             }
             .font(.caption.monospacedDigit()).foregroundStyle(Theme.mutedInk)
             HStack(spacing: 8) {
@@ -247,27 +256,31 @@ struct TajCheckpointDetailView: View {
         .heritageCard()
     }
 
-    private func speedButton(_ title: String, multiplier: Float) -> some View {
+    private func speedButton(
+        _ title: LocalizedStringKey,
+        accessibilityLabel: LocalizedStringKey,
+        multiplier: Float
+    ) -> some View {
         Button { narrator.setPlaybackSpeed(multiplier) } label: {
             Text(title)
                 .font(.caption2.bold())
                 .foregroundStyle(abs(narrator.playbackSpeed - multiplier) < 0.05 ? Theme.primary : Theme.mutedInk)
-                .padding(.horizontal, 8).frame(minHeight: 28)
+                .padding(.horizontal, 8).frame(minWidth: 44, minHeight: 44)
                 .background(Theme.surfaceContainer, in: Capsule())
         }
         .buttonStyle(SubtlePressButtonStyle())
-        .accessibilityLabel("\(title) playback speed")
+        .accessibilityLabel(accessibilityLabel)
     }
 
-    private func transportLabel(_ title: String, icon: String) -> some View {
+    private func transportLabel(_ title: LocalizedStringKey, icon: String) -> some View {
         Label(title, systemImage: icon)
             .font(.caption.bold())
             .lineLimit(1)
-            .frame(maxWidth: .infinity, minHeight: 38)
+            .frame(maxWidth: .infinity, minHeight: 44)
     }
 
     private func actionButtons(_ chapter: TajMapCheckpoint) -> some View {
-        HStack(spacing: 8) {
+        actionLayout {
             Button {
                 narrator.stop()
                 onOpenBrowse()
@@ -306,7 +319,13 @@ struct TajCheckpointDetailView: View {
         }
     }
 
-    private func compactActionLabel(_ title: String, icon: String) -> some View {
+    private var actionLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 8))
+    }
+
+    private func compactActionLabel(_ title: LocalizedStringKey, icon: String) -> some View {
         VStack(spacing: 4) {
             Image(systemName: icon).font(.system(size: 16, weight: .semibold))
             Text(title).font(.caption2.bold()).lineLimit(1).minimumScaleFactor(0.75)
@@ -321,7 +340,7 @@ struct TajCheckpointDetailView: View {
             return
         }
         let insight: String
-        if case .success(let value) = insights.state(for: chapter.id) { insight = value } else { insight = chapter.fallbackAIInformation }
+        if case .success(let value) = insights.state(for: chapter.id, language: language) { insight = value } else { insight = chapter.fallbackAIInformation }
         let text = [chapter.verifiedInformation, insight, chapter.architecture, chapter.historicalContext, chapter.interestingFact, chapter.visitorGuidance]
             .filter { !$0.isEmpty }.joined(separator: " ")
         narrator.play(text: text, languageCode: "en", chapterID: chapter.id)
@@ -355,7 +374,7 @@ extension CheckpointStatus {
         }
     }
 
-    var label: String {
+    var label: LocalizedStringKey {
         switch self {
         case .completed: "Completed"
         case .active: "Current"

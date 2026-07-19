@@ -65,7 +65,7 @@ struct PrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .semibold, design: .rounded))
+            .font(.system(.subheadline, design: .rounded, weight: .semibold))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .frame(minHeight: 54)

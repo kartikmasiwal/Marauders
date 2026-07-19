@@ -57,13 +57,40 @@ struct ARImageTrackingView: UIViewRepresentable {
         }
 
         func update(parent: ARImageTrackingView) {
+            let needsTargetReindex = self.parent.session !== parent.session
+                || self.parent.allowedTargetIDs != parent.allowedTargetIDs
             self.parent = parent
             let wasSuppressed = suppressed
             suppressed = parent.isSuppressed
-            if wasSuppressed, !suppressed { emitCurrentSelection() }
+            var targetIDsChanged = false
+            if needsTargetReindex {
+                let previousTargetIDs = Set(nuggetByTarget.keys)
+                let selectedNugget = selectedTargetID.flatMap { nuggetByTarget[$0]?.1 }
+                indexTargets()
+                targetIDsChanged = previousTargetIDs != Set(nuggetByTarget.keys)
+
+                if targetIDsChanged {
+                    clearTrackingState(lostNugget: selectedNugget)
+                    if let view { run(on: view) }
+                } else {
+                    candidates = candidates.reduce(into: [:]) { result, entry in
+                        guard let value = nuggetByTarget[entry.key] else { return }
+                        result[entry.key] = Candidate(
+                            value: value,
+                            distance: entry.value.distance,
+                            heldSince: entry.value.heldSince
+                        )
+                    }
+                    if selectedTargetID.flatMap({ nuggetByTarget[$0] }) == nil {
+                        selectedTargetID = nil
+                    }
+                }
+            }
+            if wasSuppressed, !suppressed, !targetIDsChanged { emitCurrentSelection() }
         }
 
         private func indexTargets() {
+            nuggetByTarget.removeAll(keepingCapacity: true)
             for checkpoint in parent.session.installed.package.checkpoints {
                 for nugget in checkpoint.nuggets {
                     for targetID in nugget.effectiveTargetImageIds
@@ -72,6 +99,14 @@ struct ARImageTrackingView: UIViewRepresentable {
                     }
                 }
             }
+        }
+
+        private func clearTrackingState(lostNugget: Nugget?) {
+            candidates.removeAll(keepingCapacity: true)
+            selectedTargetID = nil
+            guard let lostNugget, !suppressed else { return }
+            let onLost = parent.onLost
+            Task { @MainActor in onLost(lostNugget) }
         }
 
         private func run(on view: ARSCNView) {

@@ -23,10 +23,26 @@ struct TourContainerView: View {
 
     private var isTajJourney: Bool { session.installed.package.monument.id == "taj_mahal" }
 
-    enum TourTab: String, CaseIterable {
-        case map = "Map"
-        case scan = "AR Exp"
-        case info = "Info"
+    enum TourTab: CaseIterable {
+        case map
+        case scan
+        case info
+
+        var displayTitle: LocalizedStringResource {
+            switch self {
+            case .map: "Map"
+            case .scan: "AR Exp"
+            case .info: "Info"
+            }
+        }
+
+        var accessibilityTitle: LocalizedStringResource {
+            switch self {
+            case .map: "Map"
+            case .scan: "AR Experience"
+            case .info: "Info"
+            }
+        }
 
         var icon: String {
             switch self { case .map: "map.fill"; case .scan: "viewfinder"; case .info: "info.circle.fill" }
@@ -51,8 +67,10 @@ struct TourContainerView: View {
         session.installed.package.checkpoints.reduce(0) { $0 + $1.nuggets.count }
     }
 
+    private var visitedNuggetIDs: Set<String> { Set(visits.map(\.id)) }
+
     private var isJourneyComplete: Bool {
-        isTajJourney ? tajProgressStore.isComplete : (totalNuggets > 0 && visits.count >= totalNuggets)
+        isTajJourney ? tajProgressStore.isComplete : (totalNuggets > 0 && visitedNuggetIDs.count >= totalNuggets)
     }
 
     private var liveActivityState: TourActivityAttributes.ContentState {
@@ -60,14 +78,14 @@ struct TourContainerView: View {
             chapterName: isTajJourney
                 ? (tajProgressStore.selectedChapter?.name ?? "Start (Entry)")
                 : (session.currentCheckpoint?.name.v(session.language) ?? session.installed.package.monument.name.v(session.language)),
-            completedChapters: isTajJourney ? tajProgressStore.completedChapterCount : min(visits.count, totalNuggets),
+            completedChapters: isTajJourney ? tajProgressStore.completedChapterCount : min(visitedNuggetIDs.count, totalNuggets),
             totalChapters: isTajJourney ? tajProgressStore.totalChapterCount : totalNuggets,
             isNarrating: audioPlayer.isPlaying
         )
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack {
             Group {
                 switch tab {
                 case .map:
@@ -76,11 +94,10 @@ struct TourContainerView: View {
                         tajProgressStore: tajProgressStore,
                         audioPlayer: audioPlayer,
                         ambientPlayer: ambientPlayer,
-                        visitedNuggetIDs: Set(visits.map(\.id)),
+                        visitedNuggetIDs: visitedNuggetIDs,
                         selectedTab: $tab,
                         onBrowse: { showBrowse = true },
-                        onSelectCheckpoint: selectCheckpoint,
-                        onCompleteCheckpoint: completeCheckpoint
+                        onSelectCheckpoint: selectCheckpoint
                     )
                 case .scan:
                     ARCameraView(
@@ -95,41 +112,45 @@ struct TourContainerView: View {
                     MonumentInfoView(
                         session: session,
                         audioPlayer: audioPlayer,
-                        visitedNuggetIDs: Set(visits.map(\.id)),
+                        visitedNuggetIDs: visitedNuggetIDs,
                         onSelectCheckpoint: selectCheckpoint
                     )
                 }
             }
-            tourBar
             if showAmbientToast { ambientToast }
         }
-        .ignoresSafeArea(edges: .bottom)
         .safeAreaInset(edge: .top, spacing: 0) { isTajJourney ? AnyView(tajTripProgress) : AnyView(tripProgress) }
+        .safeAreaInset(edge: .bottom, spacing: 0) { tourBar }
         .navigationTitle(session.installed.package.monument.name.v(session.language))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { showAIGuide = true } label: {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    audioPlayer.stop()
+                    showAIGuide = true
+                } label: {
                     Image(systemName: "bubble.left.and.sparkles.fill")
                 }
                 .accessibilityLabel("Open AI Guide")
                 .accessibilityIdentifier("openAIGuideButton")
-                if ambientPlayer.isAvailable {
-                    Button { ambientPlayer.toggleMute() } label: {
-                        Image(systemName: ambientPlayer.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    }
-                    .accessibilityLabel(ambientPlayer.isMuted ? "Unmute ambient audio" : "Mute ambient audio")
-                }
             }
-            if isTajJourney, tajProgressStore.completedChapterCount > 0 {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showRecap = true } label: {
-                        Image(systemName: "book.pages.fill")
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    if ambientPlayer.isAvailable {
+                        Button { ambientPlayer.toggleMute() } label: {
+                            Label(ambientPlayer.isMuted ? "Unmute ambient audio" : "Mute ambient audio", systemImage: ambientPlayer.isMuted ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                        }
                     }
-                    .accessibilityLabel("Tour recap and quiz")
-                    .accessibilityIdentifier("tourRecapButton")
+                    if isTajJourney, tajProgressStore.completedChapterCount > 0 {
+                        Button { showRecap = true } label: {
+                            Label("Tour recap and quiz", systemImage: "book.pages.fill")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
+                .accessibilityLabel("Tour options")
             }
         }
         .fullScreenCover(isPresented: $showBrowse) {
@@ -165,7 +186,11 @@ struct TourContainerView: View {
                 showAmbientToast = true
                 Task {
                     try? await Task.sleep(for: .seconds(2.4))
-                    withAnimation { showAmbientToast = false }
+                    if reduceMotion {
+                        showAmbientToast = false
+                    } else {
+                        withAnimation { showAmbientToast = false }
+                    }
                 }
             }
             playCurrentCheckpointIntro()
@@ -190,18 +215,21 @@ struct TourContainerView: View {
         .onChange(of: tajProgressStore.selectedChapter?.id) { _, _ in
             liveActivity.update(liveActivityState)
         }
+        .onChange(of: visitedNuggetIDs.count) { _, _ in
+            liveActivity.update(liveActivityState)
+        }
         .onChange(of: tab) { _, selected in
             if selected == .map { playCurrentCheckpointIntro() }
         }
         .onChange(of: locationService.location) { _, _ in
             if let checkpoint = locationService.nearestCheckpoint(in: session.installed.package.checkpoints) {
-                withAnimation { selectCheckpoint(checkpoint) }
+                if reduceMotion { selectCheckpoint(checkpoint) } else { withAnimation { selectCheckpoint(checkpoint) } }
             }
         }
     }
 
     private var tripProgress: some View {
-        let completed = min(visits.count, totalNuggets)
+        let completed = min(visitedNuggetIDs.count, totalNuggets)
         let progress = totalNuggets == 0 ? 0 : Double(completed) / Double(totalNuggets)
 
         return VStack(spacing: 8) {
@@ -270,7 +298,7 @@ struct TourContainerView: View {
                     Image(systemName: isJourneyComplete ? "gift.fill" : "gift")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(isJourneyComplete ? Theme.primary : Theme.mutedInk)
-                        .frame(width: 34, height: 34)
+                        .frame(width: 44, height: 44)
                         .background(isJourneyComplete ? Theme.goldLight : Theme.surfaceContainer, in: Circle())
                         .overlay { Circle().stroke(Theme.gold.opacity(isJourneyComplete ? 0.85 : 0.35), lineWidth: 1.5) }
                 }
@@ -304,25 +332,25 @@ struct TourContainerView: View {
                 } label: {
                     VStack(spacing: 4) {
                         Image(systemName: item.icon).font(.system(size: 20, weight: .semibold))
-                        Text(item.rawValue.uppercased()).font(.system(size: 10, weight: .bold)).tracking(0.7)
+                        Text(item.displayTitle).textCase(.uppercase).font(.caption2.bold()).tracking(0.7)
                     }
                     .foregroundStyle(tab == item ? Theme.primary : Theme.mutedInk.opacity(0.7))
                     .frame(maxWidth: .infinity).padding(.vertical, 9)
                     .background(tab == item ? Theme.goldLight.opacity(0.28) : .clear, in: Capsule())
                 }
                 .accessibilityIdentifier("tourTab_\(item.accessibilityID)")
-                .accessibilityLabel(item.rawValue)
+                .accessibilityLabel(Text(item.accessibilityTitle))
                 .accessibilityAddTraits(tab == item ? .isSelected : [])
             }
         }
-        .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 24)
+        .padding(.horizontal, 14).padding(.vertical, 8)
         .background(.ultraThinMaterial)
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 22, topTrailingRadius: 22))
         .shadow(color: .black.opacity(0.1), radius: 12, y: -3)
     }
 
     private func markVisited(_ nuggetID: String) {
-        guard !visits.contains(where: { $0.id == nuggetID }),
+        guard !visitedNuggetIDs.contains(nuggetID),
               let checkpoint = session.checkpoint(containing: nuggetID) else { return }
         session.activeNuggetID = nuggetID
         session.currentCheckpointID = checkpoint.id
@@ -342,20 +370,6 @@ struct TourContainerView: View {
     private func selectCheckpoint(_ checkpoint: Checkpoint) {
         session.select(checkpoint: checkpoint)
         playCurrentCheckpointIntro()
-    }
-
-    private func completeCheckpoint(_ checkpoint: Checkpoint) {
-        let visitedIDs = Set(visits.map(\.id))
-        session.select(checkpoint: checkpoint)
-        for nugget in checkpoint.nuggets where !visitedIDs.contains(nugget.id) {
-            modelContext.insert(VisitedNugget(
-                id: nugget.id,
-                checkpointId: checkpoint.id,
-                monumentId: session.installed.package.monument.id
-            ))
-        }
-        session.activeNuggetID = checkpoint.nuggets.last?.id
-        try? modelContext.save()
     }
 
     private func playCurrentCheckpointIntro() {
@@ -379,10 +393,12 @@ struct TourContainerView: View {
 
     private var aiGuideContext: AIGuideContext {
         let tajChapter = isTajJourney ? tajProgressStore.selectedChapter : nil
+        let checkpointID = tajChapter.map { TajAIInsightStore.backendCheckpointID(forChapter: $0.id) }
+            ?? session.currentCheckpointID
         return AIGuideContext(
             monumentID: session.installed.package.monument.id,
             monumentName: session.installed.package.monument.name.v(session.language),
-            checkpointID: tajChapter?.id ?? session.currentCheckpointID,
+            checkpointID: checkpointID,
             checkpointName: tajChapter?.name ?? session.currentCheckpoint?.name.v(session.language) ?? "this stop",
             language: session.language
         )

@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct NuggetRevealCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let session: TourSession
     let nugget: Nugget
     @ObservedObject var audioPlayer: NuggetAudioPlayer
@@ -36,7 +38,9 @@ struct NuggetRevealCard: View {
         .onChange(of: audioPlayer.progress) { _, progress in
             if !isSeeking { seekPosition = progress }
         }
-        .onDisappear { audioPlayer.stop() }
+        .onDisappear {
+            stopOwnedAudio()
+        }
     }
 
     private var hero: some View {
@@ -47,28 +51,36 @@ struct NuggetRevealCard: View {
                     colors: [.clear, Theme.goldLight.opacity(0.72), .white.opacity(0.8), .clear],
                     startPoint: .leading, endPoint: .trailing
                 )
-                .rotationEffect(.degrees(-12)).offset(x: sweepOffset * 420).blendMode(.screen)
+                .rotationEffect(.degrees(-12))
+                    .offset(x: reduceMotion ? 0 : sweepOffset * 420)
+                    .blendMode(.screen)
                     .allowsHitTesting(false)
             }
             .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             .overlay { RoundedRectangle(cornerRadius: 28).stroke(Theme.gold.opacity(0.35), lineWidth: 1) }
             .shadow(color: Theme.gold.opacity(0.2), radius: 20, y: 10)
             .onAppear {
+                guard !reduceMotion else { return }
                 withAnimation(.easeInOut(duration: 1.1).delay(0.15)) { sweepOffset = 1.2 }
             }
     }
 
     private var closeButton: some View {
         Button {
-            audioPlayer.stop()
+            stopOwnedAudio()
             onClose()
         } label: {
             Image(systemName: "xmark").font(.headline).foregroundStyle(Theme.ink)
-                .frame(width: 42, height: 42).background(.ultraThinMaterial, in: Circle())
+                .frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         .padding(28)
         .accessibilityIdentifier("closeNuggetReveal")
+    }
+
+    private func stopOwnedAudio() {
+        guard audioPlayer.isCurrent(nuggetID: nugget.id) else { return }
+        audioPlayer.stop()
     }
 
     private var audioControls: some View {
@@ -96,7 +108,7 @@ struct NuggetRevealCard: View {
                 Text(time(audioPlayer.duration))
             }
             .font(.caption.monospacedDigit()).foregroundStyle(Theme.mutedInk)
-            HStack(spacing: 8) {
+            audioActionLayout {
                 Button(action: onReplay) {
                     audioButtonLabel("Replay", icon: "arrow.counterclockwise")
                 }
@@ -126,10 +138,16 @@ struct NuggetRevealCard: View {
         .heritageCard()
     }
 
-    private func audioButtonLabel(_ title: String, icon: String) -> some View {
+    private var audioActionLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 8))
+    }
+
+    private func audioButtonLabel(_ title: LocalizedStringKey, icon: String) -> some View {
         Label(title, systemImage: icon)
             .font(.caption.bold()).lineLimit(1)
-            .frame(maxWidth: .infinity, minHeight: 38)
+            .frame(maxWidth: .infinity, minHeight: 44)
     }
 
     private func time(_ interval: TimeInterval) -> String {

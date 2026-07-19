@@ -28,6 +28,7 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
     private var player: AVAudioPlayer?
     private var enterTask: Task<Void, Never>?
     private var exitTask: Task<Void, Never>?
+    private var fadeTask: Task<Void, Never>?
     private var progressTimer: Timer?
     private var pendingNuggetID: String?
     private var activeNuggetID: String?
@@ -37,6 +38,9 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
         if activeNuggetID == nugget.id, let player {
             exitTask?.cancel()
             exitTask = nil
+            fadeTask?.cancel()
+            fadeTask = nil
+            player.setVolume(1, fadeDuration: AudioTiming.fadeIn)
             if !player.isPlaying { isPlaying = player.play() }
             state = .playing(nugget.id)
             return
@@ -124,6 +128,23 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
         enterTask = nil
         exitTask?.cancel()
         exitTask = nil
+        fadeTask?.cancel()
+        fadeTask = nil
+        if fadeDuration > 0, let player, player.isPlaying {
+            player.setVolume(0, fadeDuration: fadeDuration)
+            fadeTask = Task { [weak self, weak player] in
+                try? await Task.sleep(for: .seconds(fadeDuration))
+                guard !Task.isCancelled, let self, let player, self.player === player else { return }
+                self.finishStop()
+            }
+            return
+        }
+        finishStop()
+    }
+
+    private func finishStop() {
+        fadeTask?.cancel()
+        fadeTask = nil
         progressTimer?.invalidate()
         progressTimer = nil
         player?.stop()
@@ -149,6 +170,8 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
     private func startAudio(url: URL, playbackID: String, visitedNuggetID: String?) -> Bool {
         exitTask?.cancel()
         exitTask = nil
+        fadeTask?.cancel()
+        fadeTask = nil
         progressTimer?.invalidate()
         player?.stop()
         player = nil
@@ -156,6 +179,7 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
             let next = try AVAudioPlayer(contentsOf: url)
             player = next
             next.delegate = self
+            next.volume = 0
             next.prepareToPlay()
             duration = next.duration
             elapsed = 0
@@ -166,6 +190,7 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
                 isPlaying = false
                 return false
             }
+            next.setVolume(1, fadeDuration: AudioTiming.fadeIn)
             state = .playing(playbackID)
             pendingNuggetID = nil
             activeNuggetID = visitedNuggetID

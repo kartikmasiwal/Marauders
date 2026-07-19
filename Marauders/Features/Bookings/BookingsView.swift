@@ -74,7 +74,7 @@ private struct TourTicketCard: View {
         .shadow(color: Theme.ink.opacity(0.07), radius: 12, y: 6)
     }
 
-    private var availabilityLabel: String {
+    private var availabilityLabel: LocalizedStringResource {
         if locallyAvailable { return "AVAILABLE OFFLINE" }
         return switch packageAvailable { case true: "PACKAGE AVAILABLE"; case false: "PACKAGE UNAVAILABLE"; case nil: "CHECKING PACKAGE" }
     }
@@ -89,7 +89,7 @@ private struct TourTicketCard: View {
         return switch packageAvailable { case true: Theme.teal; case false: Theme.mutedInk; case nil: Theme.gold }
     }
 
-    private var actionLabel: String {
+    private var actionLabel: LocalizedStringResource {
         if locallyAvailable { return "Prepare Tour" }
         return switch packageAvailable { case true: "Prepare Tour"; case false: "Tour Unavailable"; case nil: "Checking Availability" }
     }
@@ -104,14 +104,10 @@ struct TourPreparationView: View {
     @State private var selectedTourLanguage = AppLanguage.englishUK
     @State private var errorMessage: String?
     @State private var started = false
-    @State private var isStartingTour = false
 
     var body: some View {
         Group {
-            if isStartingTour {
-                TourLaunchLoadingView(booking: booking, language: selectedTourLanguage)
-                    .transition(.opacity.combined(with: reduceMotion ? .identity : .scale(scale: 0.98)))
-            } else if started, let installed {
+            if started, let installed {
                 TourContainerView(booking: booking, installed: installed, language: selectedTourLanguage.contentLanguageCode)
                     .transition(.opacity.combined(with: reduceMotion ? .identity : .scale(scale: 1.015)))
             } else {
@@ -119,11 +115,11 @@ struct TourPreparationView: View {
                     .transition(.opacity)
             }
         }
-        .navigationTitle(started || isStartingTour ? "" : booking.name)
+        .navigationTitle(started ? "" : booking.name)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(started || isStartingTour ? .hidden : .visible, for: .tabBar)
+        .toolbar(started ? .hidden : .visible, for: .tabBar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if installed != nil, !started, !isStartingTour {
+            if installed != nil, !started {
                 startTourFooter
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
@@ -193,7 +189,7 @@ struct TourPreparationView: View {
                     .frame(width: 48, height: 48)
                     .background(Theme.goldLight.opacity(0.35), in: Circle())
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(store.downloadProgress >= 0.65 ? "Installing your guide" : "Preparing offline tour")
+                    Text(downloadPhaseLabel)
                         .font(.headline).foregroundStyle(Theme.ink)
                     Text("Stories, maps and audio will be available without a connection.")
                         .font(.caption).foregroundStyle(Theme.mutedInk)
@@ -204,7 +200,7 @@ struct TourPreparationView: View {
                     .tint(Theme.primary)
                     .scaleEffect(y: 1.5)
                 HStack {
-                    Text(store.isDownloading ? "Downloading package…" : "Checking package…")
+                    Text(downloadStatusLabel)
                     Spacer()
                     Text("\(Int(store.downloadProgress * 100))%")
                         .monospacedDigit().fontWeight(.bold)
@@ -218,6 +214,14 @@ struct TourPreparationView: View {
         .heritageCard()
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Preparing offline tour, \(Int(store.downloadProgress * 100)) percent")
+    }
+
+    private var downloadPhaseLabel: LocalizedStringResource {
+        store.downloadProgress >= 0.65 ? "Installing your guide" : "Preparing offline tour"
+    }
+
+    private var downloadStatusLabel: LocalizedStringResource {
+        store.isDownloading ? "Downloading package…" : "Checking package…"
     }
 
     private func readyState(_ installed: InstalledTour) -> some View {
@@ -262,7 +266,11 @@ struct TourPreparationView: View {
                     selectedTourLanguage = language
                 } label: {
                     if language == selectedTourLanguage {
-                        Label(language.title, systemImage: "checkmark")
+                        Label {
+                            Text(verbatim: language.title)
+                        } icon: {
+                            Image(systemName: "checkmark")
+                        }
                     } else {
                         Text(verbatim: language.title)
                     }
@@ -323,63 +331,9 @@ struct TourPreparationView: View {
     }
 
     private func startTour() {
-        guard !isStartingTour else { return }
-        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.4)) {
-            isStartingTour = true
-        }
-        Task {
-            try? await Task.sleep(for: .milliseconds(reduceMotion ? 550 : 900))
-            guard !Task.isCancelled else { return }
-            withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.45)) {
-                started = true
-                isStartingTour = false
-            }
+        guard installed != nil else { return }
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.45)) {
+            started = true
         }
     }
-}
-
-private struct TourLaunchLoadingView: View {
-    let booking: TourBooking
-    let language: AppLanguage
-
-    var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Theme.surface, Theme.surfaceContainer, Theme.goldLight.opacity(0.42)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-
-            VStack(spacing: 20) {
-                Image("MaraudersLogo")
-                    .resizable().scaledToFit()
-                    .frame(width: 86, height: 86)
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .shadow(color: Theme.primary.opacity(0.2), radius: 14, y: 8)
-                    .accessibilityHidden(true)
-
-                VStack(spacing: 7) {
-                    Text("Preparing your guide")
-                        .font(.system(.title2, design: .rounded, weight: .bold))
-                        .foregroundStyle(Theme.primary)
-                    Text(booking.name)
-                        .font(.headline).foregroundStyle(Theme.ink)
-                    Text(verbatim: language.title)
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.gold)
-                }
-
-                ProgressView()
-                    .controlSize(.large)
-                    .tint(Theme.primary)
-
-                Text("Your tour is about to begin.")
-                    .font(.footnote).foregroundStyle(Theme.mutedInk)
-            }
-            .padding(30)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Preparing your guide for \(booking.name)")
-    }
-
 }

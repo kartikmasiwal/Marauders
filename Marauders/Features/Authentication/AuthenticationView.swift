@@ -8,9 +8,11 @@ struct AuthenticationView: View {
     @State private var step: Step = .phone
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @FocusState private var focusedField: Field?
     private let service = DemoAuthenticationService()
 
     enum Step { case phone, otp }
+    private enum Field { case phone, otp }
 
     var body: some View {
         ZStack {
@@ -33,6 +35,12 @@ struct AuthenticationView: View {
                 .padding(.top, 42)
                 .padding(.bottom, 30)
             }
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .task(id: step) {
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            focusedField = step == .phone ? .phone : .otp
         }
     }
 
@@ -82,6 +90,7 @@ struct AuthenticationView: View {
                 divider
 
                 Button {
+                    focusedField = nil
                     session.signIn(phone: "Google demo account")
                 } label: {
                     HStack(spacing: 12) {
@@ -109,6 +118,7 @@ struct AuthenticationView: View {
                 .accessibilityIdentifier("verifyOTPButton")
 
                 Button("Use a different number") {
+                    focusedField = nil
                     withAnimation(Motion.change(reduceMotion: reduceMotion)) { step = .phone; otp = ""; errorMessage = nil }
                 }
                 .font(.subheadline.weight(.semibold))
@@ -137,6 +147,7 @@ struct AuthenticationView: View {
                 Divider().frame(height: 24)
                 TextField("98765 43210", text: $phone)
                     .keyboardType(.phonePad)
+                    .focused($focusedField, equals: .phone)
                     .accessibilityIdentifier("phoneField")
             }
             .padding(.horizontal, 16)
@@ -149,6 +160,7 @@ struct AuthenticationView: View {
     private var otpField: some View {
         TextField("123456", text: $otp)
             .keyboardType(.numberPad)
+            .focused($focusedField, equals: .otp)
             .multilineTextAlignment(.center)
             .font(.system(size: 26, weight: .bold, design: .monospaced))
             .tracking(10)
@@ -170,6 +182,7 @@ struct AuthenticationView: View {
     }
 
     private func requestOTP() {
+        focusedField = nil
         isLoading = true
         Task {
             try? await service.requestOTP(for: phone)
@@ -179,6 +192,7 @@ struct AuthenticationView: View {
     }
 
     private func verifyOTP() {
+        focusedField = nil
         isLoading = true
         Task {
             let valid = (try? await service.verify(otp: otp)) ?? false

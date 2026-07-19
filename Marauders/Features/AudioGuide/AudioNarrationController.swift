@@ -75,8 +75,9 @@ final class AudioNarrationController: NSObject, ObservableObject {
     func seek(to position: Double) {
         guard !text.isEmpty else { return }
         let clampedPosition = min(max(position, 0), 0.999)
-        let characterOffset = Int(Double(text.count) * clampedPosition)
-        var startIndex = text.index(text.startIndex, offsetBy: characterOffset)
+        let utf16Offset = Int(Double(text.utf16.count) * clampedPosition)
+        let composedRange = (text as NSString).rangeOfComposedCharacterSequence(at: utf16Offset)
+        var startIndex = String.Index(utf16Offset: composedRange.location, in: text)
         while startIndex > text.startIndex, !text[text.index(before: startIndex)].isWhitespace {
             startIndex = text.index(before: startIndex)
         }
@@ -85,12 +86,18 @@ final class AudioNarrationController: NSObject, ObservableObject {
 
     func setPlaybackSpeed(_ multiplier: Float) {
         let position = progress
+        let shouldRemainPaused = state == .paused || state == .pausing
         speechRate = min(
             max(AVSpeechUtteranceDefaultSpeechRate * multiplier, AVSpeechUtteranceMinimumSpeechRate),
             AVSpeechUtteranceMaximumSpeechRate
         )
         estimatedDuration = duration(for: text)
-        if state != .idle { seek(to: position) }
+        if state != .idle {
+            seek(to: position)
+            if shouldRemainPaused, synthesizer.pauseSpeaking(at: .immediate) {
+                state = .pausing
+            }
+        }
     }
 
     private func start(text: String, languageCode: String, chapterID: String) {

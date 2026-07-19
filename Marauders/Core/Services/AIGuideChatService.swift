@@ -29,8 +29,9 @@ final class AIGuideChatService: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     private let engine: any AnswerEngine
+    private var activeRequestID: UUID?
 
-    init(engine: any AnswerEngine = AzureAnswerEngine()) {
+    init(engine: any AnswerEngine = HybridAnswerEngine()) {
         self.engine = engine
     }
 
@@ -41,9 +42,17 @@ final class AIGuideChatService: ObservableObject {
         messages.append(Message(role: .user, text: question))
         errorMessage = nil
         isLoading = true
-        defer { isLoading = false }
+        let requestID = UUID()
+        activeRequestID = requestID
+        defer {
+            if activeRequestID == requestID {
+                activeRequestID = nil
+                isLoading = false
+            }
+        }
 
         do {
+            try Task.checkCancellation()
             let response = try await engine.answer(
                 text: question,
                 audioBase64: nil,
@@ -52,13 +61,19 @@ final class AIGuideChatService: ObservableObject {
                 lang: context.language,
                 skipAudio: true
             )
-            guard !Task.isCancelled else { return }
+            try Task.checkCancellation()
+            guard activeRequestID == requestID else { return }
             messages.append(Message(role: .guide, text: response.text))
         } catch is CancellationError {
             return
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, activeRequestID == requestID else { return }
             errorMessage = error.localizedDescription
         }
+    }
+
+    func cancel() {
+        activeRequestID = nil
+        isLoading = false
     }
 }

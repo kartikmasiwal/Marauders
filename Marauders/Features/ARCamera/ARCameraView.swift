@@ -5,6 +5,8 @@ import TipKit
 import UIKit
 
 struct ARCameraView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @ObservedObject var session: TourSession
     @ObservedObject var audioPlayer: NuggetAudioPlayer
     @ObservedObject var ambientPlayer: AmbientAudioPlayer
@@ -26,6 +28,10 @@ struct ARCameraView: View {
         ARImageTrackingConfiguration.isSupported && cameraAuthorized == true && !arFailed
     }
 
+    private var suppressesARInteraction: Bool {
+        question.suppressesTourAudio || showTextChat || visionSnapshot != nil
+    }
+
     private var allowedTargetIDs: Set<String>? {
         guard let routeTargetID else { return nil }
         let nugget = session.installed.package.checkpoints
@@ -45,7 +51,7 @@ struct ARCameraView: View {
                     nugget: nugget,
                     audioPlayer: audioPlayer,
                     onReplay: { audioPlayer.replay(nugget: nugget, language: session.language, directory: session.installed.directory) },
-                    onClose: { withAnimation(.snappy) { revealedNugget = nil } }
+                    onClose: { withAnimation(reduceMotion ? nil : .snappy) { revealedNugget = nil } }
                 )
                 .transition(.opacity)
                 .zIndex(2)
@@ -57,11 +63,13 @@ struct ARCameraView: View {
         }
         .task { await requestCameraAccess() }
         .sheet(isPresented: $showTextChat) {
-            GuideChatView(
+            AIGuideView(context: AIGuideContext(
                 monumentID: session.installed.package.monument.id,
+                monumentName: session.installed.package.monument.name.v(session.language),
                 checkpointID: session.currentCheckpoint?.id ?? session.installed.package.checkpoints.first?.id ?? "cp_great_gate",
+                checkpointName: session.currentCheckpoint?.name.v(session.language) ?? "this stop",
                 language: session.language
-            )
+            ))
         }
         .sheet(isPresented: Binding(
             get: { visionSnapshot != nil },
@@ -86,7 +94,7 @@ struct ARCameraView: View {
         } else if cameraAuthorized == true, !arFailed {
             ARImageTrackingView(
                 session: session,
-                isSuppressed: question.suppressesTourAudio,
+                isSuppressed: suppressesARInteraction,
                 allowedTargetIDs: allowedTargetIDs,
                 snapshotProxy: snapshotProxy,
                 onFound: found,
@@ -99,7 +107,7 @@ struct ARCameraView: View {
             .offset(x: revealedNugget == nil ? 0 : -16, y: revealedNugget == nil ? 0 : 64)
             .allowsHitTesting(revealedNugget == nil)
             .shadow(color: .black.opacity(revealedNugget == nil ? 0 : 0.32), radius: 14)
-            .animation(.snappy, value: revealedNugget?.id)
+            .animation(reduceMotion ? nil : .snappy, value: revealedNugget?.id)
             .zIndex(revealedNugget == nil ? 0 : 4)
         } else if cameraAuthorized == false {
             browseFallback(title: "Camera access is off", message: "All package stories remain available in Audio Exp. Return to the map to complete chapters.", showsSettings: true)
@@ -111,20 +119,23 @@ struct ARCameraView: View {
     }
 
     private var cameraOverlay: some View {
+        Group {
+            if verticalSizeClass == .compact {
+                compactCameraOverlay
+            } else {
+                regularCameraOverlay
+            }
+        }
+        .background(LinearGradient(colors: [.black.opacity(0.55), .clear, .black.opacity(0.72)], startPoint: .top, endPoint: .bottom))
+    }
+
+    private var regularCameraOverlay: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("LIVE AR").font(.caption.bold()).tracking(1.3).foregroundStyle(Theme.goldLight)
-                    Text(routeChapterName ?? session.currentCheckpoint?.name.v(session.language) ?? session.installed.package.monument.name.v(session.language))
-                        .font(.headline).foregroundStyle(.white)
-                }
+                cameraTitle
                 Spacer()
                 VStack(alignment: .trailing, spacing: 10) {
-                    Button(action: onBrowse) {
-                        Label("Audio Exp", systemImage: "headphones")
-                            .font(.caption.bold()).foregroundStyle(.white)
-                            .padding(.horizontal, 12).padding(.vertical, 9).glassCapsule()
-                    }.accessibilityIdentifier("cameraBrowseButton")
+                    browseButton
                     whatsThisButton
                 }
             }.padding(20)
@@ -144,7 +155,60 @@ struct ARCameraView: View {
             }
             .padding(.top, 12).padding(.bottom, 106)
         }
-        .background(LinearGradient(colors: [.black.opacity(0.55), .clear, .black.opacity(0.72)], startPoint: .top, endPoint: .bottom))
+    }
+
+    private var compactCameraOverlay: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                cameraTitle
+                Spacer(minLength: 8)
+                HStack(spacing: 8) {
+                    browseButton
+                    whatsThisButton
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+
+            Spacer(minLength: 4)
+            compactScanGuide
+            Spacer(minLength: 4)
+
+            HStack(alignment: .bottom, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Hold a printed target steady to reveal its story")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 8).glassCapsule()
+                    questionStatus
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                textChatButton
+                questionButton
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+        }
+    }
+
+    private var cameraTitle: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("LIVE AR").font(.caption.bold()).tracking(1.3).foregroundStyle(Theme.goldLight)
+            Text(routeChapterName ?? session.currentCheckpoint?.name.v(session.language) ?? session.installed.package.monument.name.v(session.language))
+                .font(.headline).foregroundStyle(.white).lineLimit(2)
+        }
+    }
+
+    private var browseButton: some View {
+        Button(action: onBrowse) {
+            Label("Audio Exp", systemImage: "headphones")
+                .font(.caption.bold()).foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 44)
+                .glassCapsule()
+                .contentShape(Capsule())
+        }
+        .accessibilityIdentifier("cameraBrowseButton")
     }
 
     // Image tracking degrades fast past ~35° off-axis; guide users to line up
@@ -163,9 +227,19 @@ struct ARCameraView: View {
         .accessibilityHidden(true)
     }
 
+    private var compactScanGuide: some View {
+        Label("Face the artwork straight-on and fill the frame", systemImage: "viewfinder")
+            .font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.85))
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .glassCapsule()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
     private var whatsThisButton: some View {
         Button {
             guard let frame = snapshotProxy.capture?() else { return }
+            audioPlayer.stop()
             visionSnapshot = frame
             vision.identify(
                 image: frame,
@@ -177,8 +251,10 @@ struct ARCameraView: View {
         } label: {
             Label("What's this?", systemImage: "sparkle.magnifyingglass")
                 .font(.caption.bold()).foregroundStyle(.white)
-                .padding(.horizontal, 12).padding(.vertical, 9)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 44)
                 .glassCapsule()
+                .contentShape(Capsule())
         }
         .popoverTip(WhatsThisTip(), arrowEdge: .top)
         .accessibilityIdentifier("whatsThisButton")
@@ -186,6 +262,7 @@ struct ARCameraView: View {
 
     private var textChatButton: some View {
         Button {
+            audioPlayer.stop()
             showTextChat = true
         } label: {
             Image(systemName: "keyboard.fill")
@@ -217,7 +294,23 @@ struct ARCameraView: View {
         }
         .disabled(question.state == .thinking || question.state == .speaking || question.state == .requestingPermission)
         .opacity(question.state == .thinking || question.state == .speaking ? 0.55 : 1)
+        .accessibilityLabel(questionAccessibilityLabel)
         .accessibilityIdentifier("liveQuestionButton")
+    }
+
+    private var questionAccessibilityLabel: String {
+        switch question.state {
+        case .requestingPermission:
+            "Preparing microphone"
+        case .recording:
+            "Stop recording and send question"
+        case .thinking:
+            "Guide is thinking"
+        case .speaking:
+            "Guide is answering"
+        case .failed, .idle:
+            "Ask the guide by voice"
+        }
     }
 
     @ViewBuilder
@@ -270,7 +363,7 @@ struct ARCameraView: View {
     }
 
     private func found(_ checkpoint: Checkpoint, _ nugget: Nugget, _ frame: UIImage?) {
-        guard !question.suppressesTourAudio else { return }
+        guard !suppressesARInteraction else { return }
         session.select(checkpoint: checkpoint, nugget: nugget)
         audioPlayer.targetFound(nugget: nugget, language: session.language, directory: session.installed.directory)
         guard revealedNugget?.id != nugget.id else { return }
@@ -278,15 +371,19 @@ struct ARCameraView: View {
         shutterFlash = true
         Task {
             try? await Task.sleep(for: .milliseconds(150))
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !suppressesARInteraction else {
+                shutterFlash = false
+                frozenFrame = nil
+                return
+            }
             shutterFlash = false
-            withAnimation(.easeInOut(duration: 0.3)) { revealedNugget = nugget }
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { revealedNugget = nugget }
             frozenFrame = nil
         }
     }
 
     private func lost(_ nugget: Nugget) {
-        guard !question.suppressesTourAudio else { return }
+        guard !suppressesARInteraction else { return }
         audioPlayer.targetLost(nuggetID: nugget.id)
     }
 

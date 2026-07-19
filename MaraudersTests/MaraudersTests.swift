@@ -170,18 +170,22 @@ struct MaraudersTests {
         #expect(!restored.completeSelectedChapter())
     }
 
-    @Test @MainActor func tajAIInsightCachesOfflineFallback() async {
+    @Test @MainActor func tajAIInsightCachesOfflineFallbackByLanguage() async {
         let suiteName = "MaraudersTests.TajInsights.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = TajAIInsightStore(defaults: defaults)
         let chapter = TajMapCheckpoint.chapters[0]
 
-        await store.load(for: chapter)
-        #expect(store.state(for: chapter.id) == .success(chapter.fallbackAIInformation))
+        await store.load(for: chapter, language: "en")
+        #expect(store.state(for: chapter.id, language: "en") == .success(chapter.fallbackAIInformation))
+        #expect(defaults.string(forKey: "taj.ai-insight.v2.en.\(chapter.id)") == chapter.fallbackAIInformation)
+        #expect(store.state(for: chapter.id, language: "hi") == .idle)
+        #expect(defaults.string(forKey: "taj.ai-insight.v2.hi.\(chapter.id)") == nil)
+
         let restored = TajAIInsightStore(defaults: defaults)
-        await restored.load(for: chapter)
-        #expect(restored.state(for: chapter.id) == .success(chapter.fallbackAIInformation))
+        await restored.load(for: chapter, language: "en")
+        #expect(restored.state(for: chapter.id, language: "en") == .success(chapter.fallbackAIInformation))
     }
 
     @Test func languageFallbackUsesEnglish() {
