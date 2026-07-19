@@ -3,8 +3,20 @@ import Foundation
 protocol AnswerEngine {
     func answer(
         text: String?, audioBase64: String?,
-        checkpointId: String, monumentId: String, lang: String
+        checkpointId: String, monumentId: String, lang: String, skipAudio: Bool
     ) async throws -> AskResponse
+}
+
+extension AnswerEngine {
+    func answer(
+        text: String?, audioBase64: String?,
+        checkpointId: String, monumentId: String, lang: String
+    ) async throws -> AskResponse {
+        try await answer(
+            text: text, audioBase64: audioBase64,
+            checkpointId: checkpointId, monumentId: monumentId, lang: lang, skipAudio: false
+        )
+    }
 }
 
 struct AskResponse: Codable {
@@ -19,6 +31,7 @@ private struct AskRequest: Encodable {
     let lang: String
     let text: String?
     let audioBase64: String?
+    let skipAudio: Bool
 }
 
 struct AzureAnswerEngine: AnswerEngine {
@@ -42,7 +55,7 @@ struct AzureAnswerEngine: AnswerEngine {
 
     func answer(
         text: String?, audioBase64: String?,
-        checkpointId: String, monumentId: String, lang: String
+        checkpointId: String, monumentId: String, lang: String, skipAudio: Bool
     ) async throws -> AskResponse {
         guard !API.appKey.isEmpty else { throw EngineError.missingAppKey }
         var request = URLRequest(url: API.base.appendingPathComponent("ask"))
@@ -52,7 +65,7 @@ struct AzureAnswerEngine: AnswerEngine {
         request.timeoutInterval = 20
         request.httpBody = try JSONEncoder().encode(AskRequest(
             monumentId: monumentId, checkpointId: checkpointId, lang: lang,
-            text: text, audioBase64: audioBase64
+            text: text, audioBase64: audioBase64, skipAudio: skipAudio
         ))
 
         let (data, response) = try await session.data(for: request)
@@ -74,7 +87,7 @@ struct AzureAnswerEngine: AnswerEngine {
 struct FoundationModelsAnswerEngine: AnswerEngine {
     func answer(
         text: String?, audioBase64: String?,
-        checkpointId: String, monumentId: String, lang: String
+        checkpointId: String, monumentId: String, lang: String, skipAudio: Bool
     ) async throws -> AskResponse {
         throw CocoaError(.featureUnsupported, userInfo: [NSLocalizedDescriptionKey: "On-device Q&A requires the iOS 27 FoundationModels SDK."])
     }
