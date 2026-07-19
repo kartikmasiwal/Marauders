@@ -42,16 +42,21 @@ final class MaraudersUITests: XCTestCase {
         XCTAssertTrue(ready.waitForExistence(timeout: 10))
         app.buttons["startTourButton"].tap()
         app.tap()
-        let browse = app.buttons["browseCheckpointButton"]
-        XCTAssertTrue(browse.waitForExistence(timeout: 15))
-        browse.tap()
-        if !app.navigationBars["Audio Experience"].waitForExistence(timeout: 2) { browse.tap() }
+        for id in ["start", "terrace", "mughal-charbagh", "mosque", "great-gate", "exit"] {
+            XCTAssertTrue(app.buttons["tajRouteCheckpoint_\(id)"].waitForExistence(timeout: 5))
+        }
+        app.buttons["tajRouteCheckpoint_start"].tap()
+        XCTAssertTrue(app.buttons["tajCompleteChapterButton"].waitForExistence(timeout: 5))
+        app.buttons["tajCompleteChapterButton"].tap()
+        XCTAssertTrue(app.buttons["tajBrowseStoriesButton"].exists)
+        app.buttons["tajBrowseStoriesButton"].tap()
+        if !app.navigationBars["Audio Experience"].waitForExistence(timeout: 2) { app.buttons["tajBrowseStoriesButton"].tap() }
         XCTAssertTrue(app.navigationBars["Audio Experience"].waitForExistence(timeout: 5))
         app.buttons["browseNugget_n_gate_illusion"].tap()
         XCTAssertTrue(app.staticTexts["nuggetRevealTitle_n_gate_illusion"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["nuggetGallery_n_gate_illusion"].exists)
         app.buttons["closeNuggetReveal"].tap()
         app.buttons["Close"].tap()
-        XCTAssertTrue(app.staticTexts["1/2 SECRETS"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["tajChapterProgress"].waitForExistence(timeout: 5))
     }
 }

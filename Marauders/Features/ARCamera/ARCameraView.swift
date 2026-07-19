@@ -7,6 +7,8 @@ struct ARCameraView: View {
     @ObservedObject var session: TourSession
     @ObservedObject var audioPlayer: NuggetAudioPlayer
     @ObservedObject var ambientPlayer: AmbientAudioPlayer
+    let routeChapterName: String?
+    let routeTargetID: String?
     let onBrowse: () -> Void
     @StateObject private var question = VoiceQuestionService()
     @State private var cameraAuthorized: Bool?
@@ -43,17 +45,21 @@ struct ARCameraView: View {
         .onChange(of: question.suppressesTourAudio) { _, suppressed in
             ambientPlayer.setDucked(suppressed, for: .liveQuestion)
         }
-        .onDisappear { ambientPlayer.setDucked(false, for: .liveQuestion) }
+        .onDisappear {
+            question.cancel()
+            ambientPlayer.setDucked(false, for: .liveQuestion)
+        }
     }
 
     @ViewBuilder
     private var cameraLayer: some View {
         if !ARImageTrackingConfiguration.isSupported {
-            browseFallback(title: "AR is unavailable", message: "Use Audio Exp to enjoy every story without the camera.")
+            browseFallback(title: "AR is unavailable", message: "All package stories remain available in Audio Exp. Return to the map to complete chapters.")
         } else if cameraAuthorized == true, !arFailed {
             ARImageTrackingView(
                 session: session,
                 isSuppressed: question.suppressesTourAudio,
+                allowedTargetIDs: routeTargetID.map { Set([$0]) },
                 onFound: found,
                 onLost: lost,
                 onFailure: { arFailed = true }
@@ -67,9 +73,9 @@ struct ARCameraView: View {
             .animation(.snappy, value: revealedNugget?.id)
             .zIndex(revealedNugget == nil ? 0 : 4)
         } else if cameraAuthorized == false {
-            browseFallback(title: "Camera access is off", message: "You can complete the full tour with Audio Exp.", showsSettings: true)
+            browseFallback(title: "Camera access is off", message: "All package stories remain available in Audio Exp. Return to the map to complete chapters.", showsSettings: true)
         } else if arFailed {
-            browseFallback(title: "AR could not start", message: "Continue with the same stories and progress in Audio Exp.")
+            browseFallback(title: "AR could not start", message: "Continue with package stories in Audio Exp, then return to the map to complete this chapter.")
         } else {
             ProgressView("Preparing AR camera…").tint(.white).foregroundStyle(.white)
         }
@@ -80,7 +86,7 @@ struct ARCameraView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("LIVE AR").font(.caption.bold()).tracking(1.3).foregroundStyle(Theme.goldLight)
-                    Text(session.currentCheckpoint?.name.v(session.language) ?? session.installed.package.monument.name.v(session.language))
+                    Text(routeChapterName ?? session.currentCheckpoint?.name.v(session.language) ?? session.installed.package.monument.name.v(session.language))
                         .font(.headline).foregroundStyle(.white)
                 }
                 Spacer()

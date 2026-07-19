@@ -4,6 +4,7 @@ import SwiftUI
 struct ARImageTrackingView: UIViewRepresentable {
     let session: TourSession
     let isSuppressed: Bool
+    let allowedTargetIDs: Set<String>?
     let onFound: (Checkpoint, Nugget, UIImage?) -> Void
     let onLost: (Nugget) -> Void
     let onFailure: () -> Void
@@ -62,7 +63,10 @@ struct ARImageTrackingView: UIViewRepresentable {
 
         private func indexTargets() {
             for checkpoint in parent.session.installed.package.checkpoints {
-                for nugget in checkpoint.nuggets { nuggetByTarget[nugget.targetImageId] = (checkpoint, nugget) }
+                for nugget in checkpoint.nuggets
+                where parent.allowedTargetIDs?.contains(nugget.targetImageId) ?? true {
+                    nuggetByTarget[nugget.targetImageId] = (checkpoint, nugget)
+                }
             }
         }
 

@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 final class AmbientAudioPlayer: ObservableObject {
-    enum DuckReason: Hashable { case tourNarration, liveQuestion }
+    enum DuckReason: Hashable { case tourNarration, liveQuestion, checkpointSpeech }
 
     @Published private(set) var isAvailable = false
     @Published private(set) var isMuted = false

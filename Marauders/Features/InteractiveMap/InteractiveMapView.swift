@@ -2,7 +2,11 @@ import SwiftUI
 
 struct InteractiveMapView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var session: TourSession
+    @ObservedObject var tajProgressStore: TajTourProgressStore
+    @ObservedObject var audioPlayer: NuggetAudioPlayer
+    @ObservedObject var ambientPlayer: AmbientAudioPlayer
     let visitedNuggetIDs: Set<String>
     @Binding var selectedTab: TourContainerView.TourTab
     let onBrowse: () -> Void
@@ -13,8 +17,15 @@ struct InteractiveMapView: View {
     @State private var lastOffset: CGSize = .zero
     @State private var isCheckpointCardPresented = true
     @State private var completionBurst = false
+    @State private var presentedTajChapter: TajMapCheckpoint?
+    @State private var lockedChapterName = ""
+    @State private var showLockedChapter = false
+    @State private var pendingTajDestination: TajDestination?
+    @StateObject private var tajInsights = TajAIInsightStore()
+    @StateObject private var narrator = AudioNarrationController()
 
     private var ordered: [Checkpoint] { session.installed.package.checkpoints.sorted { $0.order < $1.order } }
+    private var isTajJourney: Bool { session.installed.package.monument.id == "taj_mahal" }
     private var isZomatoJourney: Bool { session.installed.package.monument.id == "zomato_farmhouse" }
     private var allCheckpointsCompleted: Bool { !ordered.isEmpty && ordered.allSatisfy(isCompleted) }
 
@@ -26,8 +37,13 @@ struct InteractiveMapView: View {
                 ZStack {
                     Image(mapImageName)
                         .resizable().scaledToFit().frame(width: mapSize.width, height: mapSize.height)
-                    trail(in: mapSize)
-                    checkpoints(in: mapSize, viewport: proxy.size)
+                    if isTajJourney {
+                        tajRoute(in: mapSize)
+                        tajCheckpoints(in: mapSize)
+                    } else {
+                        trail(in: mapSize)
+                        checkpoints(in: mapSize, viewport: proxy.size)
+                    }
                     completionShimmer(in: mapSize)
                 }
                 .frame(width: mapSize.width, height: mapSize.height)
@@ -37,7 +53,7 @@ struct InteractiveMapView: View {
                     TapGesture(count: 2).onEnded { resetMap() }
                 )
                 controls(viewport: proxy.size, mapSize: mapSize)
-                checkpointCard
+                if !isTajJourney { checkpointCard }
             }
             .clipped()
             .onChange(of: proxy.size) { _, newSize in
@@ -56,7 +72,124 @@ struct InteractiveMapView: View {
                     withAnimation(.easeOut(duration: 0.6)) { completionBurst = false }
                 }
             }
+            .sheet(item: $presentedTajChapter, onDismiss: performPendingTajDestination) { chapter in
+                TajCheckpointDetailView(
+                    chapterID: chapter.id,
+                    language: session.language,
+                    progressStore: tajProgressStore,
+                    insights: tajInsights,
+                    narrator: narrator,
+                    audioPlayer: audioPlayer,
+                    ambientPlayer: ambientPlayer,
+                    onOpenAR: {
+                        if let targetID = chapter.arAssetName,
+                           let packageCheckpoint = ordered.first(where: { checkpoint in
+                               checkpoint.nuggets.contains { $0.targetImageId == targetID }
+                           }) {
+                            session.select(checkpoint: packageCheckpoint)
+                        }
+                        pendingTajDestination = .ar
+                        presentedTajChapter = nil
+                    },
+                    onOpenBrowse: {
+                        pendingTajDestination = .browse
+                        presentedTajChapter = nil
+                    }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(28)
+            }
+            .alert("Chapter locked", isPresented: $showLockedChapter) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Complete the previous chapter before opening \(lockedChapterName).")
+            }
         }
+    }
+
+    private func performPendingTajDestination() {
+        guard let destination = pendingTajDestination else { return }
+        pendingTajDestination = nil
+        switch destination {
+        case .ar: selectedTab = .scan
+        case .browse: onBrowse()
+        }
+    }
+
+    private func tajRoute(in size: CGSize) -> some View {
+        let stops = tajProgressStore.chapters
+        return Canvas { context, _ in
+            guard stops.count > 1 else { return }
+            for index in 0..<(stops.count - 1) {
+                var segment = Path()
+                segment.move(to: stops[index].point(in: size))
+                segment.addLine(to: stops[index + 1].point(in: size))
+                let completed = stops[index + 1].status == .completed
+                context.stroke(
+                    segment,
+                    with: .color(completed ? Theme.teal : Theme.gold.opacity(0.8)),
+                    style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round, dash: completed ? [] : [7, 7])
+                )
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func tajCheckpoints(in size: CGSize) -> some View {
+        ZStack {
+            ForEach(tajProgressStore.chapters) { checkpoint in
+                let point = checkpoint.point(in: size)
+                let labelOffset: CGFloat = checkpoint.order.isMultiple(of: 2) || checkpoint.order == 5 ? -29 : 29
+                Button {
+                    guard checkpoint.status != .locked else {
+                        lockedChapterName = checkpoint.name
+                        showLockedChapter = true
+                        return
+                    }
+                    let selection = {
+                        guard tajProgressStore.select(checkpoint.id),
+                              let selected = tajProgressStore.chapters.first(where: { $0.id == checkpoint.id }) else { return }
+                        presentedTajChapter = selected
+                    }
+                    if reduceMotion { selection() } else { withAnimation(.spring(response: 0.38, dampingFraction: 0.82), selection) }
+                } label: {
+                    ZStack {
+                        Circle().fill(.clear).frame(width: 52, height: 52)
+                        Circle()
+                            .fill(checkpoint.status.color)
+                            .frame(width: checkpoint.status == .active ? 38 : 31, height: checkpoint.status == .active ? 38 : 31)
+                            .overlay { Circle().stroke(.white, lineWidth: 3) }
+                            .shadow(color: checkpoint.status.color.opacity(0.5), radius: 7, y: 3)
+                        Image(systemName: checkpoint.status.icon)
+                            .font(.caption.bold())
+                            .foregroundStyle(.white)
+                    }
+                }
+                .buttonStyle(.plain)
+                .position(point)
+                .accessibilityLabel("Route stop \(checkpoint.order + 1) of 6, \(checkpoint.name)")
+                .accessibilityValue(checkpoint.status.label)
+                .accessibilityHint(checkpoint.status == .locked ? "Complete the previous chapter to unlock" : "Opens chapter details")
+                .accessibilityIdentifier("tajRouteCheckpoint_\(checkpoint.id)")
+
+                Text(checkpoint.name)
+                    .font(.caption2.bold())
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Theme.surface.opacity(0.94), in: Capsule())
+                    .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+                    .position(x: point.x, y: point.y + labelOffset)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(width: size.width, height: size.height)
     }
 
     private var mapImageName: String {
@@ -244,9 +377,12 @@ struct InteractiveMapView: View {
 
     private func controls(viewport: CGSize, mapSize: CGSize) -> some View {
         VStack(spacing: 9) {
-            Button { zoom(0.4, viewport: viewport, mapSize: mapSize) } label: { Image(systemName: "plus").frame(width: 36, height: 36) }
-            Button { zoom(-0.4, viewport: viewport, mapSize: mapSize) } label: { Image(systemName: "minus").frame(width: 36, height: 36) }
-            Button { resetMap() } label: { Image(systemName: "location.fill").frame(width: 36, height: 36) }
+            Button { zoom(0.4, viewport: viewport, mapSize: mapSize) } label: { Image(systemName: "plus").frame(width: 44, height: 44) }
+                .accessibilityLabel("Zoom in")
+            Button { zoom(-0.4, viewport: viewport, mapSize: mapSize) } label: { Image(systemName: "minus").frame(width: 44, height: 44) }
+                .accessibilityLabel("Zoom out")
+            Button { resetMap() } label: { Image(systemName: "location.fill").frame(width: 44, height: 44) }
+                .accessibilityLabel("Reset map position and zoom")
         }
         .font(.headline).foregroundStyle(Theme.primary).padding(11).background(.ultraThinMaterial, in: Capsule()).shadow(radius: 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(16)
@@ -336,22 +472,24 @@ struct InteractiveMapView: View {
     }
 
     private func zoom(_ amount: CGFloat, viewport: CGSize, mapSize: CGSize) {
-        withAnimation(.snappy) {
+        let changes = {
             scale = min(max(scale + amount, 1), 3.5)
             offset = clamped(offset, scale: scale, viewport: viewport, mapSize: mapSize)
             if scale == 1 { offset = .zero }
             lastScale = scale
             lastOffset = offset
         }
+        if reduceMotion { changes() } else { withAnimation(.snappy, changes) }
     }
 
     private func resetMap() {
-        withAnimation(.snappy) {
+        let changes = {
             scale = 1
             lastScale = 1
             offset = .zero
             lastOffset = .zero
         }
+        if reduceMotion { changes() } else { withAnimation(.snappy, changes) }
     }
 
     private func focus(_ checkpoint: Checkpoint, viewport: CGSize, mapSize: CGSize) {
@@ -377,9 +515,10 @@ struct InteractiveMapView: View {
 
     private var mapAspectRatio: CGFloat {
         switch session.installed.package.monument.id {
+        case "taj_mahal": 1024 / 1536
         case "national_war_memorial": 470 / 780
         case "zomato_farmhouse": 474 / 784
-        default: 472 / 774
+        default: 1024 / 1536
         }
     }
 }
@@ -389,3 +528,5 @@ private enum CheckpointVisualState: Equatable {
     var color: Color { switch self { case .locked: .gray; case .available: Theme.gold; case .current: Theme.primary; case .visited: Theme.teal } }
     var icon: String { switch self { case .locked: "lock.fill"; case .available: "circle.fill"; case .current: "location.fill"; case .visited: "checkmark" } }
 }
+
+private enum TajDestination { case ar, browse }

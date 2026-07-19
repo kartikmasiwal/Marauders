@@ -109,6 +109,62 @@ struct MaraudersTests {
         #expect(Set(response.monuments.keys) == ["taj_mahal", "zomato_farmhouse", "red_fort"])
     }
 
+    @Test func tajMapRouteUsesExactNormalizedCoordinates() {
+        let route = TajMapCheckpoint.chapters
+        #expect(route.map(\.name) == ["Start (Entry)", "Terrace", "Mughal Charbagh", "Mosque", "Great Gate", "Exit"])
+        #expect(route.map { $0.point(in: CGSize(width: 1024, height: 1536)) } == [
+            CGPoint(x: 562, y: 333),
+            CGPoint(x: 371, y: 468),
+            CGPoint(x: 692, y: 810),
+            CGPoint(x: 386, y: 992),
+            CGPoint(x: 643, y: 1168),
+            CGPoint(x: 675, y: 1379)
+        ])
+    }
+
+    @Test @MainActor func tajChapterProgressIsSequentialPersistentAndIdempotent() {
+        let suiteName = "MaraudersTests.TajProgress.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = TajTourProgressStore(defaults: defaults)
+        #expect(store.completedChapterCount == 0)
+        #expect(store.selectedChapterID == "start")
+        #expect(store.chapters.map(\.status) == [.active, .locked, .locked, .locked, .locked, .locked])
+        #expect(!store.select("exit"))
+        #expect(store.completeSelectedChapter())
+        #expect(!store.completeSelectedChapter())
+        #expect(store.completedChapterCount == 1)
+        #expect(store.select("terrace"))
+
+        let restored = TajTourProgressStore(defaults: defaults)
+        #expect(restored.completedChapterCount == 1)
+        #expect(restored.selectedChapterID == "terrace")
+
+        for chapter in TajMapCheckpoint.chapters.dropFirst() {
+            #expect(restored.select(chapter.id))
+            #expect(restored.completeSelectedChapter())
+        }
+        #expect(restored.completedChapterCount == 6)
+        #expect(restored.progress == 1)
+        #expect(restored.isComplete)
+        #expect(!restored.completeSelectedChapter())
+    }
+
+    @Test @MainActor func tajAIInsightCachesOfflineFallback() async {
+        let suiteName = "MaraudersTests.TajInsights.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TajAIInsightStore(defaults: defaults)
+        let chapter = TajMapCheckpoint.chapters[0]
+
+        await store.load(for: chapter)
+        #expect(store.state(for: chapter.id) == .success(chapter.fallbackAIInformation))
+        let restored = TajAIInsightStore(defaults: defaults)
+        await restored.load(for: chapter)
+        #expect(restored.state(for: chapter.id) == .success(chapter.fallbackAIInformation))
+    }
+
     @Test func languageFallbackUsesEnglish() {
         let values: LangMap = ["en": "Gateway", "hi": "द्वार"]
         #expect(values.v("hi") == "द्वार")
