@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct InteractiveMapView: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var session: TourSession
     @ObservedObject var tajProgressStore: TajTourProgressStore
@@ -11,13 +10,14 @@ struct InteractiveMapView: View {
     @Binding var selectedTab: TourContainerView.TourTab
     let onBrowse: () -> Void
     let onSelectCheckpoint: (Checkpoint) -> Void
+    let onCompleteCheckpoint: (Checkpoint) -> Void
     @State private var scale: CGFloat = 1
     @State private var lastScale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
-    @State private var isCheckpointCardPresented = true
     @State private var completionBurst = false
     @State private var presentedTajChapter: TajMapCheckpoint?
+    @State private var presentedCheckpoint: Checkpoint?
     @State private var lockedChapterName = ""
     @State private var showLockedChapter = false
     @State private var pendingTajDestination: TajDestination?
@@ -53,7 +53,6 @@ struct InteractiveMapView: View {
                     TapGesture(count: 2).onEnded { resetMap() }
                 )
                 controls(viewport: proxy.size, mapSize: mapSize)
-                if !isTajJourney { checkpointCard }
             }
             .clipped()
             .onChange(of: proxy.size) { _, newSize in
@@ -72,7 +71,7 @@ struct InteractiveMapView: View {
                     withAnimation(.easeOut(duration: 0.6)) { completionBurst = false }
                 }
             }
-            .sheet(item: $presentedTajChapter, onDismiss: performPendingTajDestination) { chapter in
+            .sheet(item: $presentedTajChapter, onDismiss: handleTajChapterDismissal) { chapter in
                 TajCheckpointDetailView(
                     chapterID: chapter.id,
                     language: session.language,
@@ -100,6 +99,26 @@ struct InteractiveMapView: View {
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(28)
             }
+            .sheet(item: $presentedCheckpoint, onDismiss: performPendingTajDestination) { checkpoint in
+                CheckpointDetailSheet(
+                    checkpoint: checkpoint,
+                    language: session.language,
+                    visitedCount: visitedCount(checkpoint),
+                    isComplete: isCompleted(checkpoint),
+                    onOpenAR: {
+                        pendingTajDestination = .ar
+                        presentedCheckpoint = nil
+                    },
+                    onOpenBrowse: {
+                        pendingTajDestination = .browse
+                        presentedCheckpoint = nil
+                    },
+                    onComplete: { onCompleteCheckpoint(checkpoint) }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(28)
+            }
             .alert("Chapter locked", isPresented: $showLockedChapter) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -115,6 +134,12 @@ struct InteractiveMapView: View {
         case .ar: selectedTab = .scan
         case .browse: onBrowse()
         }
+    }
+
+    private func handleTajChapterDismissal() {
+        narrator.stop()
+        ambientPlayer.setDucked(false, for: .checkpointSpeech)
+        performPendingTajDestination()
     }
 
     private func tajRoute(in size: CGSize) -> some View {
@@ -337,44 +362,6 @@ struct InteractiveMapView: View {
         }
     }
 
-    private var checkpointCard: some View {
-        Group {
-            if let checkpoint = session.currentCheckpoint {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text("CHECKPOINT \(checkpoint.order + 1)").font(.caption2.bold()).tracking(1).foregroundStyle(Theme.gold)
-                        Spacer()
-                        Text("\(visitedCount(checkpoint))/\(checkpoint.nuggets.count) SECRETS")
-                            .font(.caption2.bold()).foregroundStyle(Theme.teal)
-                        Button {
-                            withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
-                                isCheckpointCardPresented = false
-                            }
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.caption.bold())
-                                .foregroundStyle(Theme.mutedInk)
-                                .frame(width: 30, height: 30)
-                                .background(Theme.surfaceContainer, in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Close checkpoint details")
-                    }
-                    Text(checkpoint.name.v(session.language)).font(.title2.bold()).foregroundStyle(Theme.ink)
-                    Text(checkpoint.intro.v(session.language)).font(.subheadline).foregroundStyle(Theme.mutedInk)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
-                    checkpointActions
-                }
-                .padding(18).heritageCard().padding(.horizontal, 16).padding(.bottom, 102)
-                .offset(y: isCheckpointCardPresented ? 0 : 420)
-                .opacity(isCheckpointCardPresented ? 1 : 0)
-                .scaleEffect(isCheckpointCardPresented ? 1 : 0.96, anchor: .bottom)
-                .allowsHitTesting(isCheckpointCardPresented)
-                .accessibilityHidden(!isCheckpointCardPresented)
-            }
-        }.frame(maxWidth: 520).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-    }
-
     private func controls(viewport: CGSize, mapSize: CGSize) -> some View {
         VStack(spacing: 9) {
             Button { zoom(0.4, viewport: viewport, mapSize: mapSize) } label: { Image(systemName: "plus").frame(width: 44, height: 44) }
@@ -386,28 +373,6 @@ struct InteractiveMapView: View {
         }
         .font(.headline).foregroundStyle(Theme.primary).padding(11).background(.ultraThinMaterial, in: Capsule()).shadow(radius: 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(16)
-    }
-
-    private var checkpointActions: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) { scanButton; browseButton }
-            VStack(spacing: 10) { scanButton; browseButton }
-        }
-    }
-
-    private var scanButton: some View {
-        Button { selectedTab = .scan } label: { Label("AR Exp", systemImage: "viewfinder") }
-            .buttonStyle(PrimaryButtonStyle())
-    }
-
-    private var browseButton: some View {
-        Button(action: onBrowse) {
-            Label("Audio Exp", systemImage: "headphones")
-                .font(.subheadline.bold()).foregroundStyle(Theme.primary)
-                .frame(maxWidth: .infinity).frame(height: 54)
-                .background(Theme.surfaceContainer, in: RoundedRectangle(cornerRadius: 15))
-        }
-        .accessibilityIdentifier("browseCheckpointButton")
     }
 
     private func mapGesture(viewport: CGSize, mapSize: CGSize) -> some Gesture {
@@ -466,7 +431,7 @@ struct InteractiveMapView: View {
         guard state != .locked else { return }
         withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
             onSelectCheckpoint(checkpoint)
-            isCheckpointCardPresented = true
+            presentedCheckpoint = checkpoint
             focus(checkpoint, viewport: viewport, mapSize: mapSize)
         }
     }
@@ -530,3 +495,89 @@ private enum CheckpointVisualState: Equatable {
 }
 
 private enum TajDestination { case ar, browse }
+
+private struct CheckpointDetailSheet: View {
+    let checkpoint: Checkpoint
+    let language: String
+    let visitedCount: Int
+    let isComplete: Bool
+    let onOpenAR: () -> Void
+    let onOpenBrowse: () -> Void
+    let onComplete: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label("CHECKPOINT \(checkpoint.order + 1)", systemImage: "mappin.circle.fill")
+                                .font(.caption.bold()).tracking(1).foregroundStyle(Theme.gold)
+                            Spacer()
+                            Text("\(visitedCount)/\(checkpoint.nuggets.count) STORIES")
+                                .font(.caption2.bold()).foregroundStyle(Theme.teal)
+                        }
+                        Text(checkpoint.name.v(language))
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .foregroundStyle(Theme.ink)
+                        Text("A location-specific stop in your guided route.")
+                            .foregroundStyle(Theme.mutedInk)
+                    }
+                    .padding(18)
+                    .heritageCard()
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("About this stop", systemImage: "book.closed.fill")
+                            .font(.headline).foregroundStyle(Theme.primary)
+                        Text(checkpoint.intro.v(language))
+                            .foregroundStyle(Theme.mutedInk).lineSpacing(4)
+                    }
+                    .padding(18)
+                    .heritageCard()
+
+                    HStack(spacing: 8) {
+                        Button(action: onOpenBrowse) {
+                            actionLabel("Stories", icon: "headphones")
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(Theme.primary)
+                        .accessibilityIdentifier("browseCheckpointButton")
+
+                        Button(action: onOpenAR) {
+                            actionLabel("AR", icon: "viewfinder")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.primary)
+
+                        Button(action: onComplete) {
+                            actionLabel(isComplete ? "Completed" : "Complete", icon: isComplete ? "checkmark.seal.fill" : "checkmark.circle")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.teal)
+                        .disabled(isComplete)
+                        .accessibilityLabel(isComplete ? "Checkpoint completed" : "Complete checkpoint")
+                    }
+                }
+                .padding(20)
+                .padding(.bottom, 24)
+            }
+            .background(Theme.surfaceLow)
+            .navigationTitle("Checkpoint \(checkpoint.order + 1)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func actionLabel(_ title: String, icon: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 16, weight: .semibold))
+            Text(title).font(.caption2.bold()).lineLimit(1).minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, minHeight: 46)
+    }
+}

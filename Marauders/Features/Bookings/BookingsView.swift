@@ -98,7 +98,6 @@ private struct TourTicketCard: View {
 struct TourPreparationView: View {
     let booking: TourBooking
     @Environment(AppSession.self) private var session
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var store = PackageStore()
     @State private var installed: InstalledTour?
@@ -138,45 +137,157 @@ struct TourPreparationView: View {
             Theme.surfaceLow.ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 20) {
-                Image(booking.imageName).resizable().scaledToFill().frame(height: 210).clipped().clipShape(RoundedRectangle(cornerRadius: 26))
-                    .allowsHitTesting(false).accessibilityHidden(true)
-                if let installed {
-                    Image(systemName: "checkmark.icloud.fill").font(.system(size: 42)).foregroundStyle(Theme.teal)
-                    Text("Tour ready offline").font(.title2.bold())
-                    Text(installed.package.monument.overview.v(selectedTourLanguage.contentLanguageCode)).foregroundStyle(Theme.mutedInk).multilineTextAlignment(.center)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Guide language").font(.headline).foregroundStyle(Theme.ink)
-                        Picker("Guide language", selection: $selectedTourLanguage) {
-                            ForEach(AppLanguage.allCases) { language in
-                                Text(verbatim: language.title).tag(language)
-                            }
+                    preparationHero
+                    Group {
+                        if let installed {
+                            readyState(installed)
+                        } else if let errorMessage {
+                            errorState(errorMessage)
+                        } else {
+                            downloadState
                         }
-                        .pickerStyle(.wheel)
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity)
-                        .frame(height: dynamicTypeSize.isAccessibilitySize ? 180 : 128)
-                        .clipped()
-                        .accessibilityLabel("Guide language")
-                        .accessibilityHint("Swipe up or down to choose the tour language.")
-                        .accessibilityIdentifier("languagePicker")
                     }
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay { RoundedRectangle(cornerRadius: 18).stroke(Theme.outline.opacity(0.7)) }
-
-                } else if let errorMessage {
-                    Image(systemName: "wifi.exclamationmark").font(.system(size: 40)).foregroundStyle(Theme.primary)
-                    Text(errorMessage).foregroundStyle(Theme.mutedInk).multilineTextAlignment(.center)
-                    Button("Retry Download") { Task { await prepare(forceRemote: true) } }.buttonStyle(PrimaryButtonStyle())
-                } else {
-                    ProgressView(value: store.downloadProgress)
-                    Text(store.isDownloading ? "Preparing offline package…" : "Checking tour package…").foregroundStyle(Theme.mutedInk)
-                }
+                    .transition(Motion.subtleTransition(reduceMotion: reduceMotion))
                 }
                 .padding(20)
             }
             .scrollBounceBehavior(.basedOnSize)
         }
+    }
+
+    private var preparationHero: some View {
+        Image(booking.imageName)
+            .resizable().scaledToFill()
+            .frame(height: 220)
+            .clipped()
+            .overlay {
+                LinearGradient(colors: [.clear, Theme.ink.opacity(0.72)], startPoint: .center, endPoint: .bottom)
+            }
+            .overlay(alignment: .topLeading) {
+                Label("OFFLINE TOUR", systemImage: "arrow.down.circle.fill")
+                    .font(.caption2.bold()).tracking(0.8)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 7)
+                    .background(.black.opacity(0.3), in: Capsule())
+                    .padding(14)
+            }
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(booking.city.uppercased()).font(.caption.bold()).tracking(1).foregroundStyle(Theme.goldLight)
+                    Text(booking.name).font(.system(.title2, design: .rounded, weight: .bold)).foregroundStyle(.white)
+                }
+                .padding(18)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .shadow(color: Theme.ink.opacity(0.12), radius: 16, y: 8)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private var downloadState: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 14) {
+                Image(systemName: store.downloadProgress >= 0.65 ? "shippingbox.fill" : "arrow.down.circle.fill")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(Theme.primary)
+                    .frame(width: 48, height: 48)
+                    .background(Theme.goldLight.opacity(0.35), in: Circle())
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(store.downloadProgress >= 0.65 ? "Installing your guide" : "Preparing offline tour")
+                        .font(.headline).foregroundStyle(Theme.ink)
+                    Text("Stories, maps and audio will be available without a connection.")
+                        .font(.caption).foregroundStyle(Theme.mutedInk)
+                }
+            }
+            VStack(spacing: 8) {
+                ProgressView(value: store.downloadProgress)
+                    .tint(Theme.primary)
+                    .scaleEffect(y: 1.5)
+                HStack {
+                    Text(store.isDownloading ? "Downloading package…" : "Checking package…")
+                    Spacer()
+                    Text("\(Int(store.downloadProgress * 100))%")
+                        .monospacedDigit().fontWeight(.bold)
+                }
+                .font(.caption).foregroundStyle(Theme.mutedInk)
+            }
+            Label("You can leave this screen open while we finish.", systemImage: "lock.shield.fill")
+                .font(.caption).foregroundStyle(Theme.teal)
+        }
+        .padding(20)
+        .heritageCard()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Preparing offline tour, \(Int(store.downloadProgress * 100)) percent")
+    }
+
+    private func readyState(_ installed: InstalledTour) -> some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark")
+                    .font(.headline.bold()).foregroundStyle(.white)
+                    .frame(width: 42, height: 42).background(Theme.teal, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tour ready offline").font(.title3.bold()).foregroundStyle(Theme.ink)
+                    Text("Downloaded and ready to explore").font(.caption).foregroundStyle(Theme.mutedInk)
+                }
+                Spacer()
+            }
+            Text(installed.package.monument.overview.v(selectedTourLanguage.contentLanguageCode))
+                .font(.subheadline).foregroundStyle(Theme.mutedInk).lineSpacing(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            languageMenu
+        }
+        .padding(18)
+        .heritageCard()
+    }
+
+    private func errorState(_ message: String) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 30)).foregroundStyle(Theme.primary)
+                .frame(width: 58, height: 58).background(Theme.primary.opacity(0.1), in: Circle())
+            Text("Package unavailable").font(.title3.bold()).foregroundStyle(Theme.ink)
+            Text(message).font(.subheadline).foregroundStyle(Theme.mutedInk).multilineTextAlignment(.center)
+            Button("Retry Download") { Task { await prepare(forceRemote: true) } }
+                .buttonStyle(PrimaryButtonStyle())
+        }
+        .padding(20)
+        .heritageCard()
+    }
+
+    private var languageMenu: some View {
+        Menu {
+            ForEach(AppLanguage.allCases) { language in
+                Button {
+                    selectedTourLanguage = language
+                } label: {
+                    if language == selectedTourLanguage {
+                        Label(language.title, systemImage: "checkmark")
+                    } else {
+                        Text(verbatim: language.title)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "globe").foregroundStyle(Theme.gold)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("GUIDE LANGUAGE")
+                        .font(.system(size: 9, weight: .bold)).tracking(0.7).foregroundStyle(Theme.mutedInk)
+                    Text(verbatim: selectedTourLanguage.title)
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.ink)
+                }
+                Spacer(minLength: 12)
+                Image(systemName: "chevron.up.chevron.down").font(.caption2.bold()).foregroundStyle(Theme.mutedInk)
+            }
+            .padding(.horizontal, 14).frame(minHeight: 50)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 14).stroke(Theme.outline.opacity(0.7)) }
+        }
+        .buttonStyle(SubtlePressButtonStyle())
+        .accessibilityLabel("Guide language, \(selectedTourLanguage.title)")
+        .accessibilityHint("Opens the guide language menu.")
+        .accessibilityIdentifier("languagePicker")
     }
 
     private var startTourFooter: some View {
@@ -217,7 +328,7 @@ struct TourPreparationView: View {
             isStartingTour = true
         }
         Task {
-            if !reduceMotion { try? await Task.sleep(for: .milliseconds(900)) }
+            try? await Task.sleep(for: .milliseconds(reduceMotion ? 550 : 900))
             guard !Task.isCancelled else { return }
             withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.45)) {
                 started = true

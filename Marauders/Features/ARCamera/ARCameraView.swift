@@ -30,6 +30,7 @@ struct ARCameraView: View {
                 NuggetRevealCard(
                     session: session,
                     nugget: nugget,
+                    audioPlayer: audioPlayer,
                     onReplay: { audioPlayer.replay(nugget: nugget, language: session.language, directory: session.installed.directory) },
                     onClose: { withAnimation(.snappy) { revealedNugget = nil } }
                 )

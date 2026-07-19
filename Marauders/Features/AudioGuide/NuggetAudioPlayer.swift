@@ -21,6 +21,8 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
     @Published private(set) var state: NuggetAudio = .idle
     @Published private(set) var progress: Double = 0
     @Published private(set) var isPlaying = false
+    @Published private(set) var elapsed: TimeInterval = 0
+    @Published private(set) var duration: TimeInterval = 0
 
     var onStart: ((String) -> Void)?
     private var player: AVAudioPlayer?
@@ -107,6 +109,16 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
         }
     }
 
+    func seek(to position: Double) {
+        guard let player, player.duration > 0 else { return }
+        player.currentTime = min(max(position, 0), 1) * player.duration
+        updateProgress(from: player)
+    }
+
+    func isCurrent(nuggetID: String) -> Bool {
+        currentPlaybackID == nuggetID
+    }
+
     func stop(fadeDuration: TimeInterval = 0) {
         enterTask?.cancel()
         enterTask = nil
@@ -118,6 +130,8 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
         player = nil
         isPlaying = false
         progress = 0
+        elapsed = 0
+        duration = 0
         state = .idle
         pendingNuggetID = nil
         activeNuggetID = nil
@@ -143,6 +157,9 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
             player = next
             next.delegate = self
             next.prepareToPlay()
+            duration = next.duration
+            elapsed = 0
+            progress = 0
             guard next.play() else {
                 player = nil
                 state = .idle
@@ -173,9 +190,15 @@ final class NuggetAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate
         progressTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, let player = self.player, player.duration > 0 else { return }
-                self.progress = player.currentTime / player.duration
+                self.updateProgress(from: player)
             }
         }
+    }
+
+    private func updateProgress(from player: AVAudioPlayer) {
+        elapsed = player.currentTime
+        duration = player.duration
+        progress = player.currentTime / player.duration
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {

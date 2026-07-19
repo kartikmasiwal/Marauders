@@ -64,7 +64,8 @@ struct TourContainerView: View {
                         visitedNuggetIDs: Set(visits.map(\.id)),
                         selectedTab: $tab,
                         onBrowse: { showBrowse = true },
-                        onSelectCheckpoint: selectCheckpoint
+                        onSelectCheckpoint: selectCheckpoint,
+                        onCompleteCheckpoint: completeCheckpoint
                     )
                 case .scan:
                     ARCameraView(
@@ -103,7 +104,7 @@ struct TourContainerView: View {
             }
         }
         .fullScreenCover(isPresented: $showBrowse) {
-            BrowseModeView(session: session, onEngage: engage)
+            BrowseModeView(session: session, audioPlayer: audioPlayer, onEngage: engage)
         }
         .alert(isJourneyComplete ? "Gift card unlocked" : "Gift locked", isPresented: $showGiftMessage) {
             Button("OK", role: .cancel) {}
@@ -282,6 +283,20 @@ struct TourContainerView: View {
     private func selectCheckpoint(_ checkpoint: Checkpoint) {
         session.select(checkpoint: checkpoint)
         playCurrentCheckpointIntro()
+    }
+
+    private func completeCheckpoint(_ checkpoint: Checkpoint) {
+        let visitedIDs = Set(visits.map(\.id))
+        session.select(checkpoint: checkpoint)
+        for nugget in checkpoint.nuggets where !visitedIDs.contains(nugget.id) {
+            modelContext.insert(VisitedNugget(
+                id: nugget.id,
+                checkpointId: checkpoint.id,
+                monumentId: session.installed.package.monument.id
+            ))
+        }
+        session.activeNuggetID = checkpoint.nuggets.last?.id
+        try? modelContext.save()
     }
 
     private func playCurrentCheckpointIntro() {

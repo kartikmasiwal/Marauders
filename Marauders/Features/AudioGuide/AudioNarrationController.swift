@@ -21,6 +21,7 @@ final class AudioNarrationController: NSObject, ObservableObject {
     private var language = "en-IN"
     private var chapterID = ""
     private var startedAt: Date?
+    private var utteranceStartUTF16Offset = 0
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -34,6 +35,10 @@ final class AudioNarrationController: NSObject, ObservableObject {
     }
 
     var isSpeaking: Bool { state == .speaking || state == .pausing }
+
+    var playbackSpeed: Float {
+        speechRate / AVSpeechUtteranceDefaultSpeechRate
+    }
 
     func play(text: String, languageCode: String, chapterID: String) {
         if self.chapterID == chapterID, state == .paused {
@@ -67,6 +72,27 @@ final class AudioNarrationController: NSObject, ObservableObject {
         start(text: text, languageCode: language, chapterID: chapterID)
     }
 
+    func seek(to position: Double) {
+        guard !text.isEmpty else { return }
+        let clampedPosition = min(max(position, 0), 0.999)
+        let characterOffset = Int(Double(text.count) * clampedPosition)
+        var startIndex = text.index(text.startIndex, offsetBy: characterOffset)
+        while startIndex > text.startIndex, !text[text.index(before: startIndex)].isWhitespace {
+            startIndex = text.index(before: startIndex)
+        }
+        speak(from: startIndex)
+    }
+
+    func setPlaybackSpeed(_ multiplier: Float) {
+        let position = progress
+        speechRate = min(
+            max(AVSpeechUtteranceDefaultSpeechRate * multiplier, AVSpeechUtteranceMinimumSpeechRate),
+            AVSpeechUtteranceMaximumSpeechRate
+        )
+        estimatedDuration = duration(for: text)
+        if state != .idle { seek(to: position) }
+    }
+
     private func start(text: String, languageCode: String, chapterID: String) {
         synthesizer.stopSpeaking(at: .immediate)
         self.text = text
@@ -74,9 +100,18 @@ final class AudioNarrationController: NSObject, ObservableObject {
         self.chapterID = chapterID
         progress = 0
         elapsed = 0
-        estimatedDuration = max(Double(text.split(whereSeparator: \.isWhitespace).count) / wordsPerSecond, 1)
+        estimatedDuration = duration(for: text)
+        speak(from: text.startIndex)
+    }
 
-        let utterance = AVSpeechUtterance(string: text)
+    private func speak(from startIndex: String.Index) {
+        synthesizer.stopSpeaking(at: .immediate)
+        let spokenText = String(text[startIndex...])
+        utteranceStartUTF16Offset = text.utf16.distance(from: text.utf16.startIndex, to: startIndex.samePosition(in: text.utf16)!)
+        progress = text.isEmpty ? 0 : Double(utteranceStartUTF16Offset) / Double(text.utf16.count)
+        elapsed = progress * estimatedDuration
+
+        let utterance = AVSpeechUtterance(string: spokenText)
         utterance.voice = AVSpeechSynthesisVoice(language: language)
         utterance.rate = speechRate
         utterance.pitchMultiplier = 0.96
@@ -86,6 +121,10 @@ final class AudioNarrationController: NSObject, ObservableObject {
         startedAt = Date()
         state = .speaking
         synthesizer.speak(utterance)
+    }
+
+    private func duration(for text: String) -> TimeInterval {
+        max(Double(text.split(whereSeparator: \.isWhitespace).count) / wordsPerSecond, 1)
     }
 
     private var wordsPerSecond: Double {
@@ -98,13 +137,13 @@ final class AudioNarrationController: NSObject, ObservableObject {
     }
 
     private func updateElapsed() {
-        if let startedAt { elapsed = min(Date().timeIntervalSince(startedAt), estimatedDuration) }
+        elapsed = min(progress * estimatedDuration, estimatedDuration)
     }
 
     private func finish(_ utterance: AVSpeechUtterance) {
         guard activeUtterance === utterance else { return }
-        updateElapsed()
         progress = 1
+        updateElapsed()
         state = .idle
         activeUtterance = nil
         startedAt = nil
@@ -148,7 +187,8 @@ extension AudioNarrationController: AVSpeechSynthesizerDelegate {
     ) {
         Task { @MainActor [weak self] in
             guard let self, self.activeUtterance === utterance, !self.text.isEmpty else { return }
-            self.progress = min(Double(characterRange.location + characterRange.length) / Double(self.text.utf16.count), 1)
+            let spokenOffset = self.utteranceStartUTF16Offset + characterRange.location + characterRange.length
+            self.progress = min(Double(spokenOffset) / Double(self.text.utf16.count), 1)
             self.updateElapsed()
         }
     }
