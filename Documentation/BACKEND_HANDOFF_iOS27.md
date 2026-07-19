@@ -73,20 +73,30 @@ Populate for all three monuments. Bump nothing: `schemaVersion` stays 1 (additiv
 This same corpus should become the grounding text your `/ask` LLM prompt uses, so on-device
 and server answers agree with each other.
 
-## Task 3 — P1 · Image input on /ask (server fallback for multimodal "What's this?")
+## Task 3 — P1 → **P0, frontend now ships this call** · Image input on /ask
 
-Frontend is building camera-snapshot Q&A via the iOS 27 model's vision input. Pre-A17
-devices need a server path for feature parity:
+**Status update (frontend commit on main):** the "What's this?" camera feature is LIVE in
+the app. On A17 Pro+/iOS 27 it answers on-device; on every other device it POSTs this
+exact payload to `/ask` and currently gets a 2xx-without-image-understanding or an error:
 
+```jsonc
+POST /ask   header X-App-Key
+{
+  "monumentId": "taj_mahal",
+  "checkpointId": "cp_great_gate",        // visitor's current checkpoint
+  "lang": "en",
+  "text": "What is the visitor looking at in the attached photo? Answer in at most three sentences.",
+  "imageBase64": "<JPEG, downscaled to ≤1024px longest side, quality 0.6, typically 100-400KB>",
+  "skipAudio": true
+}
 ```
-POST /ask   (same endpoint, additive)
-     body: + imageBase64?   // JPEG, ≤1MB, camera frame
-```
 
-Rules: `imageBase64` may combine with `text`; respect `skipAudio` as today; route to a
-vision-capable model with the checkpoint's `aiContext` facts in the prompt. Return the same
-response shape. If the model can't identify the image, answer from checkpoint context rather
-than erroring — the frontend treats any 2xx with text as success.
+Rules: route to a vision-capable model with the checkpoint's `aiContext` facts in the
+prompt; return the same `{question,text,audioBase64:""}` shape. If the model can't identify
+the image, answer from checkpoint context rather than erroring — the frontend treats any
+2xx with non-empty text as success and shows your text verbatim. Unknown-field tolerance:
+until you deploy this, `imageBase64` must at minimum be IGNORED (not a 4xx) so the
+text-context answer still flows.
 
 ## Task 4 — P1 · Structured quiz endpoint (server fallback for @Generable quiz)
 
@@ -121,6 +131,13 @@ body unchanged) so during judging we can quote real numbers for the skipAudio fa
 (~1-2s target) vs voice (~5-8s). No frontend dependency; purely for the demo narrative.
 
 ---
+
+## Status of Task 4 (quiz) — frontend no longer blocks on it
+
+The end-of-tour quiz + journal shipped **client-side**: on-device guided generation
+(iOS 26+ `@Generable`) with a deterministic offline fallback built from bundled chapter
+facts. A `/quiz` endpoint is now optional polish (would improve pre-A17 quiz variety),
+priority P2. If you build it, keep the contract from Task 4 unchanged.
 
 ## Explicit non-tasks (don't build these)
 

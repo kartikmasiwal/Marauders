@@ -28,6 +28,8 @@
 	<string>Marauders uses your location to show nearby events and select outdoor tour checkpoints.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Marauders records your question for the live monument guide.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Marauders transcribes your spoken question on this device so the offline guide can answer it.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UILaunchScreen</key>

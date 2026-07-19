@@ -16,6 +16,7 @@ struct TourContainerView: View {
     @State private var showAmbientToast = false
     @State private var playedCheckpointIntros = Set<String>()
     @State private var showGiftMessage = false
+    @State private var showRecap = false
     @State private var liveActivity = TourLiveActivityController()
 
     private var isTajJourney: Bool { session.installed.package.monument.id == "taj_mahal" }
@@ -113,9 +114,24 @@ struct TourContainerView: View {
                     .accessibilityLabel(ambientPlayer.isMuted ? "Unmute ambient audio" : "Mute ambient audio")
                 }
             }
+            if isTajJourney, tajProgressStore.completedChapterCount > 0 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showRecap = true } label: {
+                        Image(systemName: "book.pages.fill")
+                    }
+                    .accessibilityLabel("Tour recap and quiz")
+                    .accessibilityIdentifier("tourRecapButton")
+                }
+            }
         }
         .fullScreenCover(isPresented: $showBrowse) {
             BrowseModeView(session: session, onEngage: engage)
+        }
+        .sheet(isPresented: $showRecap) {
+            TourRecapView(
+                completedChapters: tajProgressStore.chapters.filter { tajProgressStore.completedIDs.contains($0.id) },
+                monumentName: session.installed.package.monument.name.v(session.language)
+            )
         }
         .alert(isJourneyComplete ? "Gift card unlocked" : "Gift locked", isPresented: $showGiftMessage) {
             Button("OK", role: .cancel) {}

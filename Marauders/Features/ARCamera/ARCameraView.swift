@@ -1,6 +1,7 @@
 import ARKit
 import AVFoundation
 import SwiftUI
+import TipKit
 import UIKit
 
 struct ARCameraView: View {
@@ -17,6 +18,9 @@ struct ARCameraView: View {
     @State private var frozenFrame: UIImage?
     @State private var shutterFlash = false
     @State private var showTextChat = false
+    @StateObject private var vision = VisionAnswerService()
+    @State private var visionSnapshot: UIImage?
+    private let snapshotProxy = CameraSnapshotProxy()
 
     private var arReady: Bool {
         ARImageTrackingConfiguration.isSupported && cameraAuthorized == true && !arFailed
@@ -50,6 +54,13 @@ struct ARCameraView: View {
                 language: session.language
             )
         }
+        .sheet(isPresented: Binding(
+            get: { visionSnapshot != nil },
+            set: { if !$0 { visionSnapshot = nil; vision.reset() } }
+        )) {
+            WhatsThisSheet(snapshot: visionSnapshot, vision: vision)
+                .presentationDetents([.medium, .large])
+        }
         .onChange(of: question.suppressesTourAudio) { _, suppressed in
             ambientPlayer.setDucked(suppressed, for: .liveQuestion)
         }
@@ -68,6 +79,7 @@ struct ARCameraView: View {
                 session: session,
                 isSuppressed: question.suppressesTourAudio,
                 allowedTargetIDs: routeTargetID.map { Set([$0]) },
+                snapshotProxy: snapshotProxy,
                 onFound: found,
                 onLost: lost,
                 onFailure: { arFailed = true }
@@ -98,11 +110,14 @@ struct ARCameraView: View {
                         .font(.headline).foregroundStyle(.white)
                 }
                 Spacer()
-                Button(action: onBrowse) {
-                    Label("Audio Exp", systemImage: "headphones")
-                        .font(.caption.bold()).foregroundStyle(.white)
-                        .padding(.horizontal, 12).padding(.vertical, 9).glassCapsule()
-                }.accessibilityIdentifier("cameraBrowseButton")
+                VStack(alignment: .trailing, spacing: 10) {
+                    Button(action: onBrowse) {
+                        Label("Audio Exp", systemImage: "headphones")
+                            .font(.caption.bold()).foregroundStyle(.white)
+                            .padding(.horizontal, 12).padding(.vertical, 9).glassCapsule()
+                    }.accessibilityIdentifier("cameraBrowseButton")
+                    whatsThisButton
+                }
             }.padding(20)
 
             Spacer()
@@ -139,6 +154,27 @@ struct ARCameraView: View {
         .accessibilityHidden(true)
     }
 
+    private var whatsThisButton: some View {
+        Button {
+            guard let frame = snapshotProxy.capture?() else { return }
+            visionSnapshot = frame
+            vision.identify(
+                image: frame,
+                monumentName: session.installed.package.monument.name.v(session.language),
+                checkpointID: session.currentCheckpoint?.id ?? session.installed.package.checkpoints.first?.id ?? "cp_great_gate",
+                monumentID: session.installed.package.monument.id,
+                lang: session.language
+            )
+        } label: {
+            Label("What's this?", systemImage: "sparkle.magnifyingglass")
+                .font(.caption.bold()).foregroundStyle(.white)
+                .padding(.horizontal, 12).padding(.vertical, 9)
+                .glassCapsule()
+        }
+        .popoverTip(WhatsThisTip(), arrowEdge: .top)
+        .accessibilityIdentifier("whatsThisButton")
+    }
+
     private var textChatButton: some View {
         Button {
             showTextChat = true
@@ -148,6 +184,7 @@ struct ARCameraView: View {
                 .frame(width: 48, height: 48)
                 .background(.ultraThinMaterial, in: Circle())
         }
+        .popoverTip(TextChatTip(), arrowEdge: .bottom)
         .accessibilityLabel("Ask the guide by text")
         .accessibilityIdentifier("textQuestionButton")
     }
@@ -259,5 +296,47 @@ private extension View {
     func statusPill(color: Color) -> some View {
         self.font(.caption.weight(.semibold)).foregroundStyle(.white).lineLimit(3)
             .padding(.horizontal, 14).padding(.vertical, 9).background(color.opacity(0.88), in: Capsule()).padding(.top, 10)
+    }
+}
+
+private struct WhatsThisSheet: View {
+    let snapshot: UIImage?
+    @ObservedObject var vision: VisionAnswerService
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                if let snapshot {
+                    Image(uiImage: snapshot)
+                        .resizable().scaledToFill()
+                        .frame(height: 220).clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                }
+                HStack {
+                    Label("What's this?", systemImage: "sparkle.magnifyingglass")
+                        .font(.headline).foregroundStyle(Theme.primary)
+                    Spacer()
+                    if VisionAnswerService.supportsOnDeviceVision {
+                        Label("On-device", systemImage: "cpu.fill")
+                            .font(.caption2.bold()).foregroundStyle(Theme.teal)
+                    }
+                }
+                switch vision.state {
+                case .idle, .thinking:
+                    HStack { ProgressView(); Text("The guide is looking closely…") }
+                        .foregroundStyle(Theme.mutedInk)
+                case .answered(let text):
+                    Text(text)
+                        .foregroundStyle(Theme.ink).lineSpacing(4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("whatsThisAnswer")
+                case .failed(let message):
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.primary)
+                }
+            }
+            .padding(20)
+        }
+        .presentationBackground(Theme.surfaceLow)
     }
 }

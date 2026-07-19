@@ -5,6 +5,7 @@ struct ARImageTrackingView: UIViewRepresentable {
     let session: TourSession
     let isSuppressed: Bool
     let allowedTargetIDs: Set<String>?
+    var snapshotProxy: CameraSnapshotProxy? = nil
     let onFound: (Checkpoint, Nugget, UIImage?) -> Void
     let onLost: (Nugget) -> Void
     let onFailure: () -> Void
@@ -17,6 +18,7 @@ struct ARImageTrackingView: UIViewRepresentable {
         view.session.delegate = context.coordinator
         view.automaticallyUpdatesLighting = true
         context.coordinator.attach(view)
+        snapshotProxy?.capture = { [weak view] in view?.snapshot() }
         return view
     }
 

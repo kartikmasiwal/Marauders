@@ -2,7 +2,7 @@
 import Foundation
 
 @MainActor
-final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDelegate, AVAudioPlayerDelegate {
+final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDelegate, AVAudioPlayerDelegate, AVSpeechSynthesizerDelegate {
     private struct QuestionContext {
         let checkpointID: String
         let monumentID: String
@@ -23,6 +23,7 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
 
     private var recorder: AVAudioRecorder?
     private var player: AVAudioPlayer?
+    private var synthesizer: AVSpeechSynthesizer?
     private var questionContext: QuestionContext?
     private var questionURL: URL?
     private var answerURL: URL?
@@ -70,6 +71,8 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
         recorder = nil
         player?.stop()
         player = nil
+        synthesizer?.stopSpeaking(at: .immediate)
+        synthesizer = nil
         if let answerURL { try? FileManager.default.removeItem(at: answerURL) }
         answerURL = nil
         questionContext = nil
@@ -138,6 +141,7 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
                 try play(base64: response.audioBase64)
             } catch {
                 guard !Task.isCancelled else { return }
+                if await rescueOffline(recordingURL: url, context: context) { return }
                 questionContext = nil
                 state = .failed(error.localizedDescription)
                 cleanupAudioSession()
@@ -145,6 +149,43 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
             try? FileManager.default.removeItem(at: url)
             questionURL = nil
             workTask = nil
+        }
+    }
+
+    // Fully offline voice loop: on-device STT -> on-device model -> system TTS.
+    // Only attempted when the network path already failed and Apple Intelligence is usable.
+    private func rescueOffline(recordingURL: URL, context: QuestionContext) async -> Bool {
+        guard FoundationModelsAnswerEngine.isUsable else { return false }
+        guard let transcript = await OfflineVoicePipeline.transcribe(url: recordingURL, lang: context.language),
+              !transcript.isEmpty, !Task.isCancelled else { return false }
+        guard let response = try? await FoundationModelsAnswerEngine().answer(
+            text: transcript, audioBase64: nil,
+            checkpointId: context.checkpointID, monumentId: context.monumentID,
+            lang: context.language, skipAudio: true
+        ), !Task.isCancelled else { return false }
+        answerText = response.text
+        speak(response.text, lang: context.language)
+        return true
+    }
+
+    private func speak(_ text: String, lang: String) {
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = AVSpeechSynthesisVoice(language: OfflineVoicePipeline.recognizerLocale(for: lang).identifier)
+            ?? AVSpeechSynthesisVoice(language: "en-GB")
+        let next = AVSpeechSynthesizer()
+        next.delegate = self
+        synthesizer = next
+        next.speak(utterance)
+        state = .speaking
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor in
+            guard self.synthesizer === synthesizer else { return }
+            self.synthesizer = nil
+            self.questionContext = nil
+            self.cleanupAudioSession()
+            self.state = .idle
         }
     }
 
