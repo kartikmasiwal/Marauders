@@ -236,33 +236,4 @@ private struct TourLaunchLoadingView: View {
         .accessibilityLabel("Preparing your guide for \(booking.name)")
     }
 
-    @ViewBuilder
-    private func languagePicker(for languages: [String]) -> some View {
-        if languages.count > 3 {
-            Picker("Guide language", selection: $selectedLanguage) {
-                languageOptions(languages)
-            }
-            .pickerStyle(.menu)
-            .tint(Theme.primary)
-            .accessibilityIdentifier("languagePicker")
-        } else {
-            Picker("Guide language", selection: $selectedLanguage) {
-                languageOptions(languages)
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("languagePicker")
-        }
-    }
-
-    @ViewBuilder
-    private func languageOptions(_ languages: [String]) -> some View {
-        ForEach(languages, id: \.self) { code in
-            Text(languageLabel(for: code)).tag(code)
-        }
-    }
-
-    private func languageLabel(for code: String) -> String {
-        let locale = Locale(identifier: code)
-        return locale.localizedString(forLanguageCode: code)?.capitalized(with: locale) ?? code.uppercased()
-    }
 }
