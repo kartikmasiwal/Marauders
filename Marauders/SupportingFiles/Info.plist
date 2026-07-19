@@ -29,7 +29,12 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Marauders records your question for the live monument guide.</string>
 	<key>UILaunchScreen</key>
-	<dict/>
+	<dict>
+		<key>UIImageName</key>
+		<string>MaraudersLaunchLogo</string>
+		<key>UIImageRespectsSafeAreaInsets</key>
+		<true/>
+	</dict>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>

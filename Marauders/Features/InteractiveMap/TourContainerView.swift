@@ -17,6 +17,7 @@ struct TourContainerView: View {
     @State private var playedCheckpointIntros = Set<String>()
     @State private var showGiftLocked = false
     @State private var showGiftVoucher = false
+    @State private var showAIGuide = false
 
     private var isTajJourney: Bool { session.installed.package.monument.id == "taj_mahal" }
 
@@ -95,8 +96,13 @@ struct TourContainerView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbar {
-            if ambientPlayer.isAvailable {
-                ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showAIGuide = true } label: {
+                    Image(systemName: "bubble.left.and.sparkles.fill")
+                }
+                .accessibilityLabel("Open AI Guide")
+                .accessibilityIdentifier("openAIGuideButton")
+                if ambientPlayer.isAvailable {
                     Button { ambientPlayer.toggleMute() } label: {
                         Image(systemName: ambientPlayer.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     }
@@ -115,6 +121,12 @@ struct TourContainerView: View {
         .sheet(isPresented: $showGiftVoucher) {
             DistrictVoucherView()
                 .presentationDetents([.height(390)])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(28)
+        }
+        .sheet(isPresented: $showAIGuide) {
+            AIGuideView(context: aiGuideContext)
+                .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(28)
         }
@@ -323,6 +335,17 @@ struct TourContainerView: View {
         } else {
             showGiftLocked = true
         }
+    }
+
+    private var aiGuideContext: AIGuideContext {
+        let tajChapter = isTajJourney ? tajProgressStore.selectedChapter : nil
+        return AIGuideContext(
+            monumentID: session.installed.package.monument.id,
+            monumentName: session.installed.package.monument.name.v(session.language),
+            checkpointID: tajChapter?.id ?? session.currentCheckpointID,
+            checkpointName: tajChapter?.name ?? session.currentCheckpoint?.name.v(session.language) ?? "this stop",
+            language: session.language
+        )
     }
 }
 
