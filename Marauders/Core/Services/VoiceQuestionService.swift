@@ -36,7 +36,7 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
         }
     }
 
-    init(engine: any AnswerEngine = AzureAnswerEngine()) {
+    init(engine: any AnswerEngine = HybridAnswerEngine()) {
         self.engine = engine
         super.init()
     }

@@ -1,3 +1,3 @@
-MARAUDERS_APP_KEY =
+MARAUDERS_APP_KEY = 0357099667b0c1f25644d7941307e4cf
 
 #include? "../../Secrets.xcconfig"

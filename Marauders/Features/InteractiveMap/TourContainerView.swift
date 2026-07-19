@@ -16,6 +16,7 @@ struct TourContainerView: View {
     @State private var showAmbientToast = false
     @State private var playedCheckpointIntros = Set<String>()
     @State private var showGiftMessage = false
+    @State private var liveActivity = TourLiveActivityController()
 
     private var isTajJourney: Bool { session.installed.package.monument.id == "taj_mahal" }
 
@@ -49,6 +50,17 @@ struct TourContainerView: View {
 
     private var isJourneyComplete: Bool {
         isTajJourney ? tajProgressStore.isComplete : (totalNuggets > 0 && visits.count >= totalNuggets)
+    }
+
+    private var liveActivityState: TourActivityAttributes.ContentState {
+        TourActivityAttributes.ContentState(
+            chapterName: isTajJourney
+                ? (tajProgressStore.selectedChapter?.name ?? "Start (Entry)")
+                : (session.currentCheckpoint?.name.v(session.language) ?? session.installed.package.monument.name.v(session.language)),
+            completedChapters: isTajJourney ? tajProgressStore.completedChapterCount : min(visits.count, totalNuggets),
+            totalChapters: isTajJourney ? tajProgressStore.totalChapterCount : totalNuggets,
+            isNarrating: audioPlayer.isPlaying
+        )
     }
 
     var body: some View {
@@ -121,14 +133,26 @@ struct TourContainerView: View {
                 }
             }
             playCurrentCheckpointIntro()
+            liveActivity.start(
+                monumentName: session.installed.package.monument.name.v(session.language),
+                state: liveActivityState
+            )
         }
         .onDisappear {
             audioPlayer.stop()
             ambientPlayer.stop()
             locationService.stop()
+            liveActivity.end()
         }
         .onChange(of: audioPlayer.isPlaying) { _, playing in
             ambientPlayer.setDucked(playing, for: .tourNarration)
+            liveActivity.update(liveActivityState)
+        }
+        .onChange(of: tajProgressStore.completedChapterCount) { _, _ in
+            liveActivity.update(liveActivityState)
+        }
+        .onChange(of: tajProgressStore.selectedChapter?.id) { _, _ in
+            liveActivity.update(liveActivityState)
         }
         .onChange(of: tab) { _, selected in
             if selected == .map { playCurrentCheckpointIntro() }

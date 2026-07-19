@@ -73,8 +73,11 @@ struct ARImageTrackingView: UIViewRepresentable {
         private func run(on view: ARSCNView) {
             let references = Set(nuggetByTarget.compactMap { targetID, value -> ARReferenceImage? in
                 let url = parent.session.installed.targetURL(for: value.1)
-                guard let image = UIImage(contentsOfFile: url.path)?.cgImage else { return nil }
-                let reference = ARReferenceImage(image, orientation: .up, physicalWidth: 0.18)
+                guard let image = Self.normalizedCGImage(contentsOfFile: url.path) else { return nil }
+                let reference = ARReferenceImage(
+                    image, orientation: .up,
+                    physicalWidth: value.1.targetPhysicalWidthM.map { CGFloat($0) } ?? 0.18
+                )
                 reference.name = targetID
                 return reference
             })
@@ -86,6 +89,20 @@ struct ARImageTrackingView: UIViewRepresentable {
             configuration.trackingImages = references
             configuration.maximumNumberOfTrackedImages = min(references.count, 4)
             view.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+        }
+
+        // UIImage.cgImage strips the file's EXIF rotation, so a portrait-shot target JPG
+        // would be registered sideways and only match when the phone cancels the rotation.
+        private static func normalizedCGImage(contentsOfFile path: String) -> CGImage? {
+            guard let uiImage = UIImage(contentsOfFile: path) else { return nil }
+            if uiImage.imageOrientation == .up { return uiImage.cgImage }
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = uiImage.scale
+            let renderer = UIGraphicsImageRenderer(size: uiImage.size, format: format)
+            let normalized = renderer.image { _ in
+                uiImage.draw(in: CGRect(origin: .zero, size: uiImage.size))
+            }
+            return normalized.cgImage
         }
 
         func renderer(_ renderer: SCNSceneRenderer, nodeFor anchor: ARAnchor) -> SCNNode? {

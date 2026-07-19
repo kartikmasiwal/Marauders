@@ -84,11 +84,79 @@ struct AzureAnswerEngine: AnswerEngine {
     }
 }
 
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
+
+// On-device answers via Apple's Foundation Models framework (iOS 26+, A17 Pro-class
+// hardware). Text-only: callers that need spoken audio go through AzureAnswerEngine.
 struct FoundationModelsAnswerEngine: AnswerEngine {
+    static var isUsable: Bool {
+        #if canImport(FoundationModels)
+        guard #available(iOS 26.0, *) else { return false }
+        return SystemLanguageModel.default.availability == .available
+        #else
+        return false
+        #endif
+    }
+
     func answer(
         text: String?, audioBase64: String?,
         checkpointId: String, monumentId: String, lang: String, skipAudio: Bool
     ) async throws -> AskResponse {
-        throw CocoaError(.featureUnsupported, userInfo: [NSLocalizedDescriptionKey: "On-device Q&A requires the iOS 27 FoundationModels SDK."])
+        #if canImport(FoundationModels)
+        guard #available(iOS 26.0, *), SystemLanguageModel.default.availability == .available else {
+            throw CocoaError(.featureUnsupported, userInfo: [NSLocalizedDescriptionKey: "On-device answers need Apple Intelligence (iOS 26, iPhone 15 Pro or later)."])
+        }
+        guard let question = text?.trimmingCharacters(in: .whitespacesAndNewlines), !question.isEmpty else {
+            throw CocoaError(.featureUnsupported, userInfo: [NSLocalizedDescriptionKey: "On-device answers support text questions only."])
+        }
+        let session = LanguageModelSession(instructions: Self.instructions(monumentId: monumentId, checkpointId: checkpointId, lang: lang))
+        let response = try await session.respond(to: question)
+        return AskResponse(question: question, text: response.content, audioBase64: "")
+        #else
+        throw CocoaError(.featureUnsupported)
+        #endif
+    }
+
+    private static func instructions(monumentId: String, checkpointId: String, lang: String) -> String {
+        let languageName = Locale(identifier: "en").localizedString(forLanguageCode: lang) ?? "English"
+        var lines = [
+            "You are Marauders, an expert local tour guide.",
+            "The visitor is at the site \"\(monumentId)\", near checkpoint \"\(checkpointId)\".",
+            "Answer in \(languageName). Keep answers to two or three vivid, factual sentences.",
+            "If the question is unrelated to the site or travel, gently steer back to the tour."
+        ]
+        if monumentId == "taj_mahal" {
+            lines.append("Grounding notes you may draw on:")
+            for chapter in TajMapCheckpoint.chapters {
+                lines.append("- \(chapter.name): \(chapter.verifiedInformation) \(chapter.interestingFact)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
+// On-device first for text questions, Azure /ask otherwise or on any failure.
+struct HybridAnswerEngine: AnswerEngine {
+    let onDevice = FoundationModelsAnswerEngine()
+    let remote = AzureAnswerEngine()
+
+    func answer(
+        text: String?, audioBase64: String?,
+        checkpointId: String, monumentId: String, lang: String, skipAudio: Bool
+    ) async throws -> AskResponse {
+        if skipAudio, text != nil, FoundationModelsAnswerEngine.isUsable {
+            if let response = try? await onDevice.answer(
+                text: text, audioBase64: audioBase64,
+                checkpointId: checkpointId, monumentId: monumentId, lang: lang, skipAudio: true
+            ) {
+                return response
+            }
+        }
+        return try await remote.answer(
+            text: text, audioBase64: audioBase64,
+            checkpointId: checkpointId, monumentId: monumentId, lang: lang, skipAudio: skipAudio
+        )
     }
 }

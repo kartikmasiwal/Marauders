@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A10000000000000000000091 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000093 /* ZIPFoundation */; };
+		A2000000000000000000000C /* MaraudersWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* MaraudersWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -25,6 +26,13 @@
 			remoteGlobalIDString = A10000000000000000000011;
 			remoteInfo = Marauders;
 		};
+		A2000000000000000000000D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A20000000000000000000007;
+			remoteInfo = MaraudersWidgets;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +40,7 @@
 		A10000000000000000000022 /* MaraudersTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MaraudersTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000023 /* MaraudersUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MaraudersUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000095 /* Marauders/SupportingFiles/AppConfig.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Marauders/SupportingFiles/AppConfig.xcconfig; sourceTree = SOURCE_ROOT; };
+		A20000000000000000000001 /* MaraudersWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MaraudersWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -43,12 +52,20 @@
 			);
 			target = A10000000000000000000011 /* Marauders */;
 		};
+		A20000000000000000000003 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A20000000000000000000007 /* MaraudersWidgets */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A10000000000000000000041 /* Marauders */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (A10000000000000000000094 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Marauders; sourceTree = "<group>"; };
 		A10000000000000000000042 /* MaraudersTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = MaraudersTests; sourceTree = "<group>"; };
 		A10000000000000000000043 /* MaraudersUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = MaraudersUITests; sourceTree = "<group>"; };
+		A20000000000000000000002 /* MaraudersWidgets */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (A20000000000000000000003 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = MaraudersWidgets; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -74,7 +91,28 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A20000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A2000000000000000000000B /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A2000000000000000000000C /* MaraudersWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXGroup section */
 		A10000000000000000000002 = {
@@ -83,6 +121,7 @@
 				A10000000000000000000041 /* Marauders */,
 				A10000000000000000000042 /* MaraudersTests */,
 				A10000000000000000000043 /* MaraudersUITests */,
+				A20000000000000000000002 /* MaraudersWidgets */,
 				A10000000000000000000003 /* Products */,
 				AB5523D1300C0BC000012DB1 /* Recovered References */,
 			);
@@ -94,6 +133,7 @@
 				A10000000000000000000021 /* Marauders.app */,
 				A10000000000000000000022 /* MaraudersTests.xctest */,
 				A10000000000000000000023 /* MaraudersUITests.xctest */,
+				A20000000000000000000001 /* MaraudersWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -116,10 +156,12 @@
 				A10000000000000000000061 /* Sources */,
 				A10000000000000000000051 /* Frameworks */,
 				A10000000000000000000064 /* Resources */,
+				A2000000000000000000000B /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A2000000000000000000000E /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				A10000000000000000000041 /* Marauders */,
@@ -178,6 +220,28 @@
 			productReference = A10000000000000000000023 /* MaraudersUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		A20000000000000000000007 /* MaraudersWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A20000000000000000000008 /* Build configuration list for PBXNativeTarget "MaraudersWidgets" */;
+			buildPhases = (
+				A20000000000000000000004 /* Sources */,
+				A20000000000000000000005 /* Frameworks */,
+				A20000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A20000000000000000000002 /* MaraudersWidgets */,
+			);
+			name = MaraudersWidgets;
+			packageProductDependencies = (
+			);
+			productName = MaraudersWidgets;
+			productReference = A20000000000000000000001 /* MaraudersWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -198,6 +262,9 @@
 					A10000000000000000000013 = {
 						CreatedOnToolsVersion = 26.0;
 						TestTargetID = A10000000000000000000011;
+					};
+					A20000000000000000000007 = {
+						CreatedOnToolsVersion = 26.0;
 					};
 				};
 			};
@@ -220,6 +287,7 @@
 				A10000000000000000000011 /* Marauders */,
 				A10000000000000000000012 /* MaraudersTests */,
 				A10000000000000000000013 /* MaraudersUITests */,
+				A20000000000000000000007 /* MaraudersWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -240,6 +308,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A10000000000000000000066 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A20000000000000000000006 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -270,6 +345,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A20000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -282,6 +364,11 @@
 			isa = PBXTargetDependency;
 			target = A10000000000000000000011 /* Marauders */;
 			targetProxy = A10000000000000000000032 /* PBXContainerItemProxy */;
+		};
+		A2000000000000000000000E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A20000000000000000000007 /* MaraudersWidgets */;
+			targetProxy = A2000000000000000000000D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -422,6 +509,46 @@
 			};
 			name = Release;
 		};
+		A20000000000000000000009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MaraudersWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MaraudersWidgets;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.marauders.app.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A2000000000000000000000A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MaraudersWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MaraudersWidgets;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.marauders.app.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -457,6 +584,15 @@
 			buildConfigurations = (
 				A10000000000000000000087 /* Debug */,
 				A10000000000000000000088 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+	A20000000000000000000008 /* Build configuration list for PBXNativeTarget "MaraudersWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A20000000000000000000009 /* Debug */,
+				A2000000000000000000000A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

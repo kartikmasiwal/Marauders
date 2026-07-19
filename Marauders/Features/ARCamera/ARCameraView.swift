@@ -16,6 +16,7 @@ struct ARCameraView: View {
     @State private var revealedNugget: Nugget?
     @State private var frozenFrame: UIImage?
     @State private var shutterFlash = false
+    @State private var showTextChat = false
 
     private var arReady: Bool {
         ARImageTrackingConfiguration.isSupported && cameraAuthorized == true && !arFailed
@@ -42,6 +43,13 @@ struct ARCameraView: View {
             if shutterFlash { shutterFeedback.zIndex(5) }
         }
         .task { await requestCameraAccess() }
+        .sheet(isPresented: $showTextChat) {
+            GuideChatView(
+                monumentID: session.installed.package.monument.id,
+                checkpointID: session.currentCheckpoint?.id ?? session.installed.package.checkpoints.first?.id ?? "cp_great_gate",
+                language: session.language
+            )
+        }
         .onChange(of: question.suppressesTourAudio) { _, suppressed in
             ambientPlayer.setDucked(suppressed, for: .liveQuestion)
         }
@@ -93,19 +101,55 @@ struct ARCameraView: View {
                 Button(action: onBrowse) {
                     Label("Audio Exp", systemImage: "headphones")
                         .font(.caption.bold()).foregroundStyle(.white)
-                        .padding(.horizontal, 12).padding(.vertical, 9).background(.ultraThinMaterial, in: Capsule())
+                        .padding(.horizontal, 12).padding(.vertical, 9).glassCapsule()
                 }.accessibilityIdentifier("cameraBrowseButton")
             }.padding(20)
 
             Spacer()
+            scanGuide
+            Spacer()
             Text("Hold a printed target steady to reveal its story")
                 .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                .padding(.horizontal, 18).padding(.vertical, 12).background(.ultraThinMaterial, in: Capsule())
+                .padding(.horizontal, 18).padding(.vertical, 12).glassCapsule()
 
             questionStatus
-            questionButton.padding(.top, 12).padding(.bottom, 106)
+            HStack(spacing: 26) {
+                textChatButton
+                questionButton
+                textChatButton.hidden()
+            }
+            .padding(.top, 12).padding(.bottom, 106)
         }
         .background(LinearGradient(colors: [.black.opacity(0.55), .clear, .black.opacity(0.72)], startPoint: .top, endPoint: .bottom))
+    }
+
+    // Image tracking degrades fast past ~35° off-axis; guide users to line up
+    // straight-on instead of trying oblique angles the tech can't match.
+    private var scanGuide: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "viewfinder")
+                .font(.system(size: 190, weight: .ultraLight))
+                .foregroundStyle(.white.opacity(0.5))
+            Label("Face the artwork straight-on and fill the frame", systemImage: "camera.metering.center.weighted")
+                .font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .glassCapsule()
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private var textChatButton: some View {
+        Button {
+            showTextChat = true
+        } label: {
+            Image(systemName: "keyboard.fill")
+                .font(.title3).foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .background(.ultraThinMaterial, in: Circle())
+        }
+        .accessibilityLabel("Ask the guide by text")
+        .accessibilityIdentifier("textQuestionButton")
     }
 
     private var questionButton: some View {

@@ -152,7 +152,8 @@ final class PackageStore: ObservableObject {
                     exclusive: nugget.exclusive,
                     images: images,
                     text: nugget.text,
-                    audio: audio
+                    audio: audio,
+                    targetPhysicalWidthM: nugget.targetPhysicalWidthM
                 )
             }
             guard !nuggets.isEmpty else { return nil }

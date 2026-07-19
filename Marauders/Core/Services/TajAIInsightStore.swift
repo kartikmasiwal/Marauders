@@ -10,7 +10,7 @@ final class TajAIInsightStore: ObservableObject {
     private let defaults: UserDefaults
     private let engine: any AnswerEngine
 
-    init(defaults: UserDefaults = .standard, engine: any AnswerEngine = AzureAnswerEngine()) {
+    init(defaults: UserDefaults = .standard, engine: any AnswerEngine = HybridAnswerEngine()) {
         self.defaults = defaults
         self.engine = engine
     }
@@ -46,11 +46,15 @@ final class TajAIInsightStore: ObservableObject {
         let question = "Share one fascinating, lesser-known insight about the \(chapter.name) chapter of the Taj Mahal in two sentences."
         let response = try? await engine.answer(
             text: question, audioBase64: nil,
-            checkpointId: Self.backendCheckpointIDs[chapter.id] ?? "cp_great_gate",
+            checkpointId: Self.backendCheckpointID(forChapter: chapter.id),
             monumentId: "taj_mahal", lang: "en", skipAudio: true
         )
         guard let text = response?.text.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
         return text
+    }
+
+    static func backendCheckpointID(forChapter id: String) -> String {
+        backendCheckpointIDs[id] ?? "cp_great_gate"
     }
 
     private static let backendCheckpointIDs: [String: String] = [

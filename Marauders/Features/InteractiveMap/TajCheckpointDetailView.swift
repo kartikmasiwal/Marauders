@@ -15,6 +15,7 @@ struct TajCheckpointDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showARUnavailable = false
+    @State private var showGuideChat = false
 
     private var chapter: TajMapCheckpoint? {
         progressStore.chapters.first { $0.id == chapterID }
@@ -129,9 +130,26 @@ struct TajCheckpointDetailView: View {
                 Button("Retry") { Task { await insights.retry(for: chapter) } }
                     .buttonStyle(.bordered)
             }
+            Button {
+                showGuideChat = true
+            } label: {
+                Label("Ask the guide a question", systemImage: "bubble.left.and.text.bubble.right")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(Theme.primary)
+            .accessibilityIdentifier("askGuideButton")
         }
         .padding(18)
         .heritageCard()
+        .sheet(isPresented: $showGuideChat) {
+            GuideChatView(
+                monumentID: "taj_mahal",
+                checkpointID: TajAIInsightStore.backendCheckpointID(forChapter: chapter.id),
+                language: language
+            )
+        }
     }
 
     private func detailGrid(_ chapter: TajMapCheckpoint) -> some View {

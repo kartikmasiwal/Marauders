@@ -28,19 +28,36 @@ extension Color {
 }
 
 struct HeritageCardModifier: ViewModifier {
+    @ViewBuilder
     func body(content: Content) -> some View {
-        content
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(.white.opacity(0.55), lineWidth: 1)
-            }
-            .shadow(color: Theme.ink.opacity(0.08), radius: 16, y: 8)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
+                .shadow(color: Theme.ink.opacity(0.08), radius: 16, y: 8)
+        } else {
+            content
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(.white.opacity(0.55), lineWidth: 1)
+                }
+                .shadow(color: Theme.ink.opacity(0.08), radius: 16, y: 8)
+        }
     }
 }
 
 extension View {
     func heritageCard() -> some View { modifier(HeritageCardModifier()) }
+
+    // Liquid Glass capsule on iOS 26+, material capsule below.
+    @ViewBuilder
+    func glassCapsule() -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect()
+        } else {
+            self.background(.ultraThinMaterial, in: Capsule())
+        }
+    }
 }
 
 struct PrimaryButtonStyle: ButtonStyle {

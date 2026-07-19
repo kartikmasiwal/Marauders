@@ -48,6 +48,7 @@ struct Nugget: Codable, Identifiable {
     let images: [String]
     let text: LangMap
     let audio: LangMap
+    let targetPhysicalWidthM: Double?
 
     init(
         id: String,
@@ -56,7 +57,8 @@ struct Nugget: Codable, Identifiable {
         exclusive: Bool,
         images: [String] = [],
         text: LangMap,
-        audio: LangMap
+        audio: LangMap,
+        targetPhysicalWidthM: Double? = nil
     ) {
         self.id = id
         self.title = title
@@ -65,10 +67,11 @@ struct Nugget: Codable, Identifiable {
         self.images = images
         self.text = text
         self.audio = audio
+        self.targetPhysicalWidthM = targetPhysicalWidthM
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, targetImageId, exclusive, images, text, audio
+        case id, title, targetImageId, exclusive, images, text, audio, targetPhysicalWidthM
     }
 
     init(from decoder: Decoder) throws {
@@ -80,6 +83,7 @@ struct Nugget: Codable, Identifiable {
         images = try values.decodeIfPresent([String].self, forKey: .images) ?? []
         text = try values.decode(LangMap.self, forKey: .text)
         audio = try values.decode(LangMap.self, forKey: .audio)
+        targetPhysicalWidthM = try values.decodeIfPresent(Double.self, forKey: .targetPhysicalWidthM)
     }
 }
 
