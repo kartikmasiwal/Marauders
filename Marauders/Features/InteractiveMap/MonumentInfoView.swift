@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MonumentInfoView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var session: TourSession
     @ObservedObject var audioPlayer: NuggetAudioPlayer
     let visitedNuggetIDs: Set<String>
@@ -14,9 +15,14 @@ struct MonumentInfoView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                header
-                if let nugget = session.activeNugget { activeNugget(nugget) } else { emptyState }
-                checkpointList
+                header.oneTimeStaggeredReveal(0)
+                Group {
+                    if let nugget = session.activeNugget { activeNugget(nugget) } else { emptyState }
+                }
+                .transition(Motion.subtleTransition(reduceMotion: reduceMotion))
+                .animation(Motion.change(reduceMotion: reduceMotion), value: session.activeNugget?.id)
+                .oneTimeStaggeredReveal(1)
+                checkpointList.oneTimeStaggeredReveal(2)
             }.padding(20).padding(.bottom, 105)
         }
         .background(Theme.surfaceLow)
@@ -70,8 +76,9 @@ struct MonumentInfoView: View {
                         }
                         Spacer()
                         if let status = status(for: checkpoint, index: index) {
-                            Text(status.title.uppercased())
+                            Text(LocalizedStringKey(status.title))
                                 .font(.system(size: 9, weight: .bold)).tracking(0.6)
+                                .textCase(.uppercase)
                                 .foregroundStyle(status.color)
                                 .padding(.horizontal, 8).padding(.vertical, 5)
                                 .background(status.color.opacity(0.1), in: Capsule())

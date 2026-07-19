@@ -7,7 +7,7 @@ struct BookingsView: View {
                 Theme.surfaceLow.ignoresSafeArea()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
-                        header
+                        header.oneTimeStaggeredReveal(0)
                         ForEach(MockData.bookings) { booking in TourTicketCard(booking: booking) }
                     }.padding(20)
                 }
@@ -62,38 +62,73 @@ private struct TourTicketCard: View {
 
 struct TourPreparationView: View {
     let booking: TourBooking
+    @Environment(AppSession.self) private var session
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var store = PackageStore()
     @State private var installed: InstalledTour?
-    @State private var selectedLanguage = "en"
+    @State private var selectedTourLanguage = AppLanguage.englishUK
     @State private var errorMessage: String?
     @State private var started = false
+    @State private var isStartingTour = false
 
     var body: some View {
         Group {
-            if started, let installed {
-                TourContainerView(booking: booking, installed: installed, language: selectedLanguage)
+            if isStartingTour {
+                TourLaunchLoadingView(booking: booking, language: selectedTourLanguage)
+                    .transition(.opacity.combined(with: reduceMotion ? .identity : .scale(scale: 0.98)))
+            } else if started, let installed {
+                TourContainerView(booking: booking, installed: installed, language: selectedTourLanguage.contentLanguageCode)
+                    .transition(.opacity.combined(with: reduceMotion ? .identity : .scale(scale: 1.015)))
             } else {
                 preparation
+                    .transition(.opacity)
             }
         }
-        .navigationTitle(started ? "" : booking.name)
+        .navigationTitle(started || isStartingTour ? "" : booking.name)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(started ? .hidden : .visible, for: .tabBar)
+        .toolbar(started || isStartingTour ? .hidden : .visible, for: .tabBar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if installed != nil, !started, !isStartingTour {
+                startTourFooter
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .environment(\.locale, Locale(identifier: selectedTourLanguage.localeIdentifier))
         .task { await prepare() }
     }
 
     private var preparation: some View {
         ZStack {
             Theme.surfaceLow.ignoresSafeArea()
-            VStack(spacing: 22) {
-                Image(booking.imageName).resizable().scaledToFill().frame(height: 250).clipped().clipShape(RoundedRectangle(cornerRadius: 26))
+            ScrollView {
+                VStack(spacing: 20) {
+                Image(booking.imageName).resizable().scaledToFill().frame(height: 210).clipped().clipShape(RoundedRectangle(cornerRadius: 26))
                     .allowsHitTesting(false).accessibilityHidden(true)
                 if let installed {
                     Image(systemName: "checkmark.icloud.fill").font(.system(size: 42)).foregroundStyle(Theme.teal)
                     Text("Tour ready offline").font(.title2.bold())
-                    Text(installed.package.monument.overview.v(selectedLanguage)).foregroundStyle(Theme.mutedInk).multilineTextAlignment(.center)
-                    languagePicker(for: installed.package.monument.languages)
-                    Button("Start Tour") { started = true }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("startTourButton")
+                    Text(installed.package.monument.overview.v(selectedTourLanguage.contentLanguageCode)).foregroundStyle(Theme.mutedInk).multilineTextAlignment(.center)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Guide language").font(.headline).foregroundStyle(Theme.ink)
+                        Picker("Guide language", selection: $selectedTourLanguage) {
+                            ForEach(AppLanguage.allCases) { language in
+                                Text(verbatim: language.title).tag(language)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .labelsHidden()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: dynamicTypeSize.isAccessibilitySize ? 180 : 128)
+                        .clipped()
+                        .accessibilityLabel("Guide language")
+                        .accessibilityHint("Swipe up or down to choose the tour language.")
+                        .accessibilityIdentifier("languagePicker")
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay { RoundedRectangle(cornerRadius: 18).stroke(Theme.outline.opacity(0.7)) }
+
                 } else if let errorMessage {
                     Image(systemName: "wifi.exclamationmark").font(.system(size: 40)).foregroundStyle(Theme.primary)
                     Text(errorMessage).foregroundStyle(Theme.mutedInk).multilineTextAlignment(.center)
@@ -102,19 +137,103 @@ struct TourPreparationView: View {
                     ProgressView(value: store.downloadProgress)
                     Text(store.isDownloading ? "Preparing offline package…" : "Checking tour package…").foregroundStyle(Theme.mutedInk)
                 }
-                Spacer()
-            }.padding(20)
+                }
+                .padding(20)
+            }
+            .scrollBounceBehavior(.basedOnSize)
         }
+    }
+
+    private var startTourFooter: some View {
+        VStack(spacing: 9) {
+            Label("Please use headphones for a better experience.", systemImage: "headphones")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.mutedInk)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Start Tour") { startTour() }
+                .buttonStyle(PrimaryButtonStyle())
+                .accessibilityIdentifier("startTourButton")
+        }
+        .padding(.horizontal, 20).padding(.top, 11).padding(.bottom, 9)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) { Divider().overlay(Theme.outline.opacity(0.55)) }
     }
 
     private func prepare(forceRemote: Bool = false) async {
         errorMessage = nil
         do {
-            installed = try await store.prepare(monumentID: booking.packageID, preferBundled: !forceRemote)
-            selectedLanguage = installed?.package.monument.languages.first ?? "en"
+            let prepared = try await store.prepare(monumentID: booking.packageID, preferBundled: !forceRemote)
+            withAnimation(Motion.change(reduceMotion: reduceMotion)) {
+                installed = prepared
+                selectedTourLanguage = session.appLanguage
+            }
         } catch {
-            errorMessage = error.localizedDescription
+            withAnimation(Motion.change(reduceMotion: reduceMotion)) {
+                errorMessage = error.localizedDescription
+            }
         }
+    }
+
+    private func startTour() {
+        guard !isStartingTour else { return }
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.4)) {
+            isStartingTour = true
+        }
+        Task {
+            if !reduceMotion { try? await Task.sleep(for: .milliseconds(900)) }
+            guard !Task.isCancelled else { return }
+            withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.45)) {
+                started = true
+                isStartingTour = false
+            }
+        }
+    }
+}
+
+private struct TourLaunchLoadingView: View {
+    let booking: TourBooking
+    let language: AppLanguage
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [Theme.surface, Theme.surfaceContainer, Theme.goldLight.opacity(0.42)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            VStack(spacing: 20) {
+                Image("MaraudersLogo")
+                    .resizable().scaledToFit()
+                    .frame(width: 86, height: 86)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .shadow(color: Theme.primary.opacity(0.2), radius: 14, y: 8)
+                    .accessibilityHidden(true)
+
+                VStack(spacing: 7) {
+                    Text("Preparing your guide")
+                        .font(.system(.title2, design: .rounded, weight: .bold))
+                        .foregroundStyle(Theme.primary)
+                    Text(booking.name)
+                        .font(.headline).foregroundStyle(Theme.ink)
+                    Text(verbatim: language.title)
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.gold)
+                }
+
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(Theme.primary)
+
+                Text("Your tour is about to begin.")
+                    .font(.footnote).foregroundStyle(Theme.mutedInk)
+            }
+            .padding(30)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Preparing your guide for \(booking.name)")
     }
 
     @ViewBuilder

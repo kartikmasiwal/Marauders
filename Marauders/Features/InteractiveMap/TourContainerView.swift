@@ -8,6 +8,7 @@ struct TourContainerView: View {
     @StateObject private var ambientPlayer = AmbientAudioPlayer()
     @StateObject private var locationService = LocationService()
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var allVisits: [VisitedNugget]
     @State private var tab: TourTab = .map
     @State private var showBrowse = false
@@ -26,6 +27,10 @@ struct TourContainerView: View {
 
         var accessibilityID: String {
             switch self { case .map: "map"; case .scan: "scan"; case .info: "info" }
+        }
+
+        var localizedTitle: LocalizedStringKey {
+            switch self { case .map: "Map"; case .scan: "AR Exp"; case .info: "Info" }
         }
     }
 
@@ -120,7 +125,7 @@ struct TourContainerView: View {
         }
         .onChange(of: locationService.location) { _, _ in
             if let checkpoint = locationService.nearestCheckpoint(in: session.installed.package.checkpoints) {
-                withAnimation { selectCheckpoint(checkpoint) }
+                withAnimation(Motion.change(reduceMotion: reduceMotion)) { session.select(checkpoint: checkpoint) }
             }
         }
     }
@@ -138,6 +143,8 @@ struct TourContainerView: View {
                 Text("\(completed) of \(totalNuggets) secrets - \(Int(progress * 100))%")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Theme.mutedInk)
+                    .contentTransition(.numericText())
+                    .animation(reduceMotion ? nil : Motion.standard, value: completed)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Trip progress")
@@ -148,6 +155,7 @@ struct TourContainerView: View {
                     .tint(Theme.gold)
                     .scaleEffect(y: 1.6)
                     .padding(.trailing, 16)
+                    .animation(reduceMotion ? nil : Motion.standard, value: progress)
                     .accessibilityHidden(true)
                 Button { showGiftMessage = true } label: {
                     Image(systemName: isJourneyComplete ? "gift.fill" : "gift")
@@ -157,7 +165,8 @@ struct TourContainerView: View {
                         .background(isJourneyComplete ? Theme.goldLight : Theme.surfaceContainer, in: Circle())
                         .overlay { Circle().stroke(Theme.gold.opacity(isJourneyComplete ? 0.85 : 0.35), lineWidth: 1.5) }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(SubtlePressButtonStyle())
+                .animation(reduceMotion ? nil : Motion.quick, value: isJourneyComplete)
                 .accessibilityLabel(isJourneyComplete ? "Gift card unlocked" : "Gift card locked")
                 .accessibilityHint(isJourneyComplete ? "Shows your unlocked reward" : "Shows how to unlock the reward")
             }
@@ -182,14 +191,15 @@ struct TourContainerView: View {
     private var tourBar: some View {
         HStack {
             ForEach(TourTab.allCases, id: \.self) { item in
-                Button { withAnimation(.snappy) { tab = item } } label: {
+                Button { tab = item } label: {
                     VStack(spacing: 4) {
                         Image(systemName: item.icon).font(.system(size: 20, weight: .semibold))
-                        Text(item.rawValue.uppercased()).font(.system(size: 10, weight: .bold)).tracking(0.7)
+                        Text(item.localizedTitle).font(.system(size: 10, weight: .bold)).tracking(0.7).textCase(.uppercase)
                     }
                     .foregroundStyle(tab == item ? Theme.primary : Theme.mutedInk.opacity(0.7))
                     .frame(maxWidth: .infinity).padding(.vertical, 9)
                     .background(tab == item ? Theme.goldLight.opacity(0.28) : .clear, in: Capsule())
+                    .animation(reduceMotion ? nil : Motion.quick, value: tab)
                 }
                 .accessibilityIdentifier("tourTab_\(item.accessibilityID)")
             }

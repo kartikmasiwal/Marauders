@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AuthenticationView: View {
     @Environment(AppSession.self) private var session
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var phone = "98765 43210"
     @State private var otp = ""
     @State private var step: Step = .phone
@@ -24,9 +25,9 @@ struct AuthenticationView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
-                    brand
-                    welcome
-                    authenticationCard
+                    brand.oneTimeStaggeredReveal(0)
+                    welcome.oneTimeStaggeredReveal(1)
+                    authenticationCard.oneTimeStaggeredReveal(2)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 42)
@@ -108,7 +109,7 @@ struct AuthenticationView: View {
                 .accessibilityIdentifier("verifyOTPButton")
 
                 Button("Use a different number") {
-                    withAnimation { step = .phone; otp = ""; errorMessage = nil }
+                    withAnimation(Motion.change(reduceMotion: reduceMotion)) { step = .phone; otp = ""; errorMessage = nil }
                 }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.primary)
@@ -116,6 +117,7 @@ struct AuthenticationView: View {
 
             if let errorMessage {
                 Text(errorMessage).font(.footnote).foregroundStyle(.red)
+                    .transition(.opacity)
             }
 
             Text("By continuing, you agree to the demo Terms and Privacy Policy.")
@@ -163,7 +165,7 @@ struct AuthenticationView: View {
             .foregroundStyle(Theme.outline)
     }
 
-    private func loadingLabel(_ text: String) -> some View {
+    private func loadingLabel(_ text: LocalizedStringKey) -> some View {
         HStack { if isLoading { ProgressView().tint(.white) }; Text(text) }
     }
 
@@ -172,7 +174,7 @@ struct AuthenticationView: View {
         Task {
             try? await service.requestOTP(for: phone)
             isLoading = false
-            withAnimation { step = .otp }
+            withAnimation(Motion.change(reduceMotion: reduceMotion)) { step = .otp }
         }
     }
 
@@ -181,7 +183,13 @@ struct AuthenticationView: View {
         Task {
             let valid = (try? await service.verify(otp: otp)) ?? false
             isLoading = false
-            if valid { session.signIn(phone: phone) } else { errorMessage = "That code is not valid. Try 123456." }
+            if valid {
+                session.signIn(phone: phone)
+            } else {
+                withAnimation(Motion.change(reduceMotion: reduceMotion)) {
+                    errorMessage = "That code is not valid. Try 123456."
+                }
+            }
         }
     }
 }
