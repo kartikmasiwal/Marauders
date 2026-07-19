@@ -1,4 +1,3 @@
-import AVFoundation
 import SwiftUI
 
 struct TajCheckpointDetailView: View {
@@ -16,6 +15,8 @@ struct TajCheckpointDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showARUnavailable = false
     @State private var showGuideChat = false
+    @State private var seekPosition = 0.0
+    @State private var isSeeking = false
 
     private var chapter: TajMapCheckpoint? {
         progressStore.chapters.first { $0.id == chapterID }
@@ -28,7 +29,10 @@ struct TajCheckpointDetailView: View {
         let observed = AnyView(loaded.onChange(of: narrator.state) { oldState, newState in
             narrationStateChanged(oldState, newState)
         })
-        let cleaned = AnyView(observed.onDisappear(perform: stopNarration))
+        let progressObserved = AnyView(observed.onChange(of: narrator.progress) { _, progress in
+            if !isSeeking { seekPosition = progress }
+        })
+        let cleaned = AnyView(progressObserved.onDisappear(perform: stopNarration))
         return AnyView(cleaned.alert("AR preview unavailable", isPresented: $showARUnavailable) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -46,7 +50,10 @@ struct TajCheckpointDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button("Done") {
+                        stopNarration()
+                        dismiss()
+                    }
                 }
             }
         }
@@ -59,8 +66,8 @@ struct TajCheckpointDetailView: View {
                 chapterHeader(chapter)
                 informationCard(title: "Verified tour content", icon: "checkmark.seal.fill", text: chapter.verifiedInformation)
                 aiInformation(chapter)
-                detailGrid(chapter)
                 audioExperience(chapter)
+                detailGrid(chapter)
                 actionButtons(chapter)
             }
             .padding(20)
@@ -175,93 +182,144 @@ struct TajCheckpointDetailView: View {
     }
 
     private func audioExperience(_ chapter: TajMapCheckpoint) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("Audio Experience", systemImage: "waveform.circle.fill")
-                .font(.headline).foregroundStyle(Theme.primary)
-            ProgressView(value: narrator.progress).tint(Theme.gold)
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(time(narrator.elapsed))
+                Label("Audio Experience", systemImage: "waveform.circle.fill")
+                    .font(.subheadline.bold()).foregroundStyle(Theme.primary)
                 Spacer()
-                Text("Approx. \(time(narrator.estimatedDuration))")
+                speedButton("0.8x", multiplier: 0.8)
+                speedButton("1.2x", multiplier: 1.2)
+            }
+            Slider(
+                value: Binding(
+                    get: { isSeeking ? seekPosition : narrator.progress },
+                    set: { seekPosition = $0 }
+                ),
+                in: 0...1,
+                onEditingChanged: { editing in
+                    isSeeking = editing
+                    if !editing { narrator.seek(to: seekPosition) }
+                }
+            )
+            .tint(Theme.gold)
+            .disabled(narrator.state == .idle)
+            .accessibilityLabel("Narration position")
+            .accessibilityValue("\(Int((isSeeking ? seekPosition : narrator.progress) * 100)) percent")
+            HStack {
+                Text(time(isSeeking ? narrator.estimatedDuration * seekPosition : narrator.elapsed))
+                Spacer()
+                Text(time(narrator.estimatedDuration))
             }
             .font(.caption.monospacedDigit()).foregroundStyle(Theme.mutedInk)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) { narrationButtons(chapter) }
-                VStack(spacing: 10) { narrationButtons(chapter) }
+            HStack(spacing: 8) {
+                Button { narrator.restart() } label: {
+                    transportLabel("Replay", icon: "arrow.counterclockwise")
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.primary)
+                .disabled(narrator.estimatedDuration == 0)
+
+                Button {
+                    if narrator.isSpeaking {
+                        narrator.pause()
+                    } else {
+                        play(chapter)
+                    }
+                } label: {
+                    transportLabel(
+                        narrator.isSpeaking ? "Pause" : "Play",
+                        icon: narrator.isSpeaking ? "pause.fill" : "play.fill"
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.primary)
+                .accessibilityLabel(narrator.isSpeaking ? "Pause narration" : narrator.state == .paused ? "Resume narration" : "Play narration")
+
+                Button { narrator.stop() } label: {
+                    transportLabel("Stop", icon: "stop.fill")
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.primary)
+                .disabled(narrator.state == .idle)
             }
-            .buttonStyle(.bordered)
-            HStack {
-                Image(systemName: "tortoise.fill")
-                Slider(
-                    value: Binding(
-                        get: { Double(narrator.speechRate) },
-                        set: { narrator.speechRate = Float($0) }
-                    ),
-                    in: Double(AVSpeechUtteranceMinimumSpeechRate)...Double(AVSpeechUtteranceMaximumSpeechRate)
-                )
-                .disabled(narrator.state != .idle)
-                Image(systemName: "hare.fill")
-            }
-            .foregroundStyle(Theme.mutedInk)
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Narration speed")
         }
-        .padding(18)
+        .padding(14)
         .heritageCard()
     }
 
-    @ViewBuilder
-    private func narrationButtons(_ chapter: TajMapCheckpoint) -> some View {
-        Button { play(chapter) } label: { Label("Play", systemImage: "play.fill").frame(minHeight: 44) }
-        Button { narrator.state == .paused ? narrator.resume() : narrator.pause() } label: {
-            Label(narrator.state == .paused ? "Resume" : "Pause", systemImage: narrator.state == .paused ? "play.fill" : "pause.fill")
-                .frame(minHeight: 44)
+    private func speedButton(_ title: String, multiplier: Float) -> some View {
+        Button { narrator.setPlaybackSpeed(multiplier) } label: {
+            Text(title)
+                .font(.caption2.bold())
+                .foregroundStyle(abs(narrator.playbackSpeed - multiplier) < 0.05 ? Theme.primary : Theme.mutedInk)
+                .padding(.horizontal, 8).frame(minHeight: 28)
+                .background(Theme.surfaceContainer, in: Capsule())
         }
-        .disabled(narrator.state == .idle || narrator.state == .pausing)
-        Button { narrator.stop() } label: { Label("Stop", systemImage: "stop.fill").frame(minHeight: 44) }
-            .disabled(narrator.state == .idle)
-        Button { narrator.restart() } label: { Image(systemName: "backward.end.fill").frame(minWidth: 44, minHeight: 44) }
-            .disabled(narrator.state == .idle)
-            .accessibilityLabel("Restart narration")
+        .buttonStyle(SubtlePressButtonStyle())
+        .accessibilityLabel("\(title) playback speed")
+    }
+
+    private func transportLabel(_ title: String, icon: String) -> some View {
+        Label(title, systemImage: icon)
+            .font(.caption.bold())
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, minHeight: 38)
     }
 
     private func actionButtons(_ chapter: TajMapCheckpoint) -> some View {
-        VStack(spacing: 12) {
+        HStack(spacing: 8) {
             Button {
                 narrator.stop()
                 onOpenBrowse()
             } label: {
-                Label("Browse Local Stories", systemImage: "headphones").frame(minHeight: 44)
+                compactActionLabel("Local Stories", icon: "headphones")
             }
             .buttonStyle(.bordered)
+            .tint(Theme.primary)
+            .accessibilityLabel("Browse Local Stories")
             .accessibilityIdentifier("tajBrowseStoriesButton")
 
             Button {
                 narrator.stop()
                 if chapter.arAssetName == nil { showARUnavailable = true } else { onOpenAR() }
             } label: {
-                Label("AR Experience", systemImage: "arkit").frame(minHeight: 44)
+                compactActionLabel("AR", icon: "arkit")
             }
-            .buttonStyle(PrimaryButtonStyle())
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.primary)
+            .accessibilityLabel("AR Experience")
 
             Button {
                 let completion = { _ = progressStore.completeSelectedChapter() }
                 if reduceMotion { completion() } else { withAnimation(.easeInOut(duration: 0.3), completion) }
             } label: {
-                Label(
-                    chapter.status == .completed ? "Chapter Completed" : "Complete Chapter",
-                    systemImage: chapter.status == .completed ? "checkmark.seal.fill" : "checkmark.circle"
-                ).frame(minHeight: 44)
+                compactActionLabel(
+                    chapter.status == .completed ? "Completed" : "Complete",
+                    icon: chapter.status == .completed ? "checkmark.seal.fill" : "checkmark.circle"
+                )
             }
             .buttonStyle(.borderedProminent)
             .tint(Theme.teal)
             .disabled(!progressStore.canCompleteSelectedChapter)
+            .accessibilityLabel(chapter.status == .completed ? "Chapter Completed" : "Complete Chapter")
             .accessibilityIdentifier("tajCompleteChapterButton")
         }
     }
 
+    private func compactActionLabel(_ title: String, icon: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 16, weight: .semibold))
+            Text(title).font(.caption2.bold()).lineLimit(1).minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, minHeight: 48)
+    }
+
     private func play(_ chapter: TajMapCheckpoint) {
         audioPlayer.stop()
+        if narrator.state == .paused {
+            narrator.resume()
+            return
+        }
         let insight: String
         if case .success(let value) = insights.state(for: chapter.id) { insight = value } else { insight = chapter.fallbackAIInformation }
         let text = [chapter.verifiedInformation, insight, chapter.architecture, chapter.historicalContext, chapter.interestingFact, chapter.visitorGuidance]

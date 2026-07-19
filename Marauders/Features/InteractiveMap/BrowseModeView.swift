@@ -2,6 +2,7 @@ import SwiftUI
 
 struct BrowseModeView: View {
     @ObservedObject var session: TourSession
+    @ObservedObject var audioPlayer: NuggetAudioPlayer
     let onEngage: (Checkpoint, Nugget) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -14,6 +15,7 @@ struct BrowseModeView: View {
                 NuggetRevealCard(
                     session: session,
                     nugget: nugget,
+                    audioPlayer: audioPlayer,
                     onReplay: { replay(nugget) },
                     onClose: { withAnimation(Motion.change(reduceMotion: reduceMotion)) { revealedNugget = nil } }
                 )

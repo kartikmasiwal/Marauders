@@ -185,6 +185,27 @@ struct MaraudersTests {
         #expect(AudioTiming.crossfade == 0.5)
     }
 
+    @Test @MainActor func aiGuideKeepsConversationHistory() async {
+        let service = AIGuideChatService(engine: StubAnswerEngine())
+        let context = AIGuideContext(
+            monumentID: "taj_mahal",
+            monumentName: "Taj Mahal",
+            checkpointID: "great-gate",
+            checkpointName: "Great Gate",
+            language: "en"
+        )
+
+        await service.send("Why does the lettering change size?", context: context)
+
+        #expect(service.messages.count == 2)
+        #expect(service.messages[0].role == .user)
+        #expect(service.messages[0].text == "Why does the lettering change size?")
+        #expect(service.messages[1].role == .guide)
+        #expect(service.messages[1].text == "The scaling compensates for viewing perspective.")
+        #expect(service.errorMessage == nil)
+        #expect(!service.isLoading)
+    }
+
     @Test @MainActor func profileAndPreferencesPersist() {
         let suiteName = "MaraudersTests.Profile.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -215,5 +236,24 @@ struct MaraudersTests {
         #expect(restored.appLanguage == .hindi)
         #expect(restored.prefersLargeText)
         #expect(restored.prefersHighContrast)
+    }
+}
+
+private struct StubAnswerEngine: AnswerEngine {
+    func answer(
+        text: String?, audioBase64: String?,
+        checkpointId: String, monumentId: String, lang: String, skipAudio: Bool
+    ) async throws -> AskResponse {
+        #expect(text == "Why does the lettering change size?")
+        #expect(audioBase64 == nil)
+        #expect(checkpointId == "great-gate")
+        #expect(monumentId == "taj_mahal")
+        #expect(lang == "en")
+        #expect(skipAudio)
+        return AskResponse(
+            question: text ?? "",
+            text: "The scaling compensates for viewing perspective.",
+            audioBase64: ""
+        )
     }
 }

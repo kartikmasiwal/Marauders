@@ -15,9 +15,11 @@ struct TourContainerView: View {
     @State private var showBrowse = false
     @State private var showAmbientToast = false
     @State private var playedCheckpointIntros = Set<String>()
-    @State private var showGiftMessage = false
     @State private var showRecap = false
     @State private var liveActivity = TourLiveActivityController()
+    @State private var showGiftLocked = false
+    @State private var showGiftVoucher = false
+    @State private var showAIGuide = false
 
     private var isTajJourney: Bool { session.installed.package.monument.id == "taj_mahal" }
 
@@ -77,7 +79,8 @@ struct TourContainerView: View {
                         visitedNuggetIDs: Set(visits.map(\.id)),
                         selectedTab: $tab,
                         onBrowse: { showBrowse = true },
-                        onSelectCheckpoint: selectCheckpoint
+                        onSelectCheckpoint: selectCheckpoint,
+                        onCompleteCheckpoint: completeCheckpoint
                     )
                 case .scan:
                     ARCameraView(
@@ -106,8 +109,13 @@ struct TourContainerView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbar {
-            if ambientPlayer.isAvailable {
-                ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showAIGuide = true } label: {
+                    Image(systemName: "bubble.left.and.sparkles.fill")
+                }
+                .accessibilityLabel("Open AI Guide")
+                .accessibilityIdentifier("openAIGuideButton")
+                if ambientPlayer.isAvailable {
                     Button { ambientPlayer.toggleMute() } label: {
                         Image(systemName: ambientPlayer.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     }
@@ -125,7 +133,7 @@ struct TourContainerView: View {
             }
         }
         .fullScreenCover(isPresented: $showBrowse) {
-            BrowseModeView(session: session, onEngage: engage)
+            BrowseModeView(session: session, audioPlayer: audioPlayer, onEngage: engage)
         }
         .sheet(isPresented: $showRecap) {
             TourRecapView(
@@ -133,10 +141,22 @@ struct TourContainerView: View {
                 monumentName: session.installed.package.monument.name.v(session.language)
             )
         }
-        .alert(isJourneyComplete ? "Gift card unlocked" : "Gift locked", isPresented: $showGiftMessage) {
+        .alert("Gift locked", isPresented: $showGiftLocked) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(isJourneyComplete ? "Journey complete. Your gift card is ready to unlock." : "Complete the journey to unlock the gift card.")
+            Text("Complete the journey to unlock the gift card.")
+        }
+        .sheet(isPresented: $showGiftVoucher) {
+            DistrictVoucherView()
+                .presentationDetents([.height(390)])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(28)
+        }
+        .sheet(isPresented: $showAIGuide) {
+            AIGuideView(context: aiGuideContext)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(28)
         }
         .onAppear {
             audioPlayer.onStart = markVisited
@@ -204,7 +224,7 @@ struct TourContainerView: View {
                     .scaleEffect(y: 1.6)
                     .padding(.trailing, 16)
                     .accessibilityHidden(true)
-                Button { showGiftMessage = true } label: {
+                Button { presentGift() } label: {
                     Image(systemName: isJourneyComplete ? "gift.fill" : "gift")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(isJourneyComplete ? Theme.primary : Theme.mutedInk)
@@ -246,7 +266,7 @@ struct TourContainerView: View {
                     .scaleEffect(y: 1.6)
                     .padding(.trailing, 16)
                     .accessibilityHidden(true)
-                Button { showGiftMessage = true } label: {
+                Button { presentGift() } label: {
                     Image(systemName: isJourneyComplete ? "gift.fill" : "gift")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(isJourneyComplete ? Theme.primary : Theme.mutedInk)
@@ -324,6 +344,20 @@ struct TourContainerView: View {
         playCurrentCheckpointIntro()
     }
 
+    private func completeCheckpoint(_ checkpoint: Checkpoint) {
+        let visitedIDs = Set(visits.map(\.id))
+        session.select(checkpoint: checkpoint)
+        for nugget in checkpoint.nuggets where !visitedIDs.contains(nugget.id) {
+            modelContext.insert(VisitedNugget(
+                id: nugget.id,
+                checkpointId: checkpoint.id,
+                monumentId: session.installed.package.monument.id
+            ))
+        }
+        session.activeNuggetID = checkpoint.nuggets.last?.id
+        try? modelContext.save()
+    }
+
     private func playCurrentCheckpointIntro() {
         guard let checkpoint = session.currentCheckpoint,
               playedCheckpointIntros.insert(checkpoint.id).inserted else { return }
@@ -333,5 +367,66 @@ struct TourContainerView: View {
             directory: session.installed.directory
         )
         if !started { playedCheckpointIntros.remove(checkpoint.id) }
+    }
+
+    private func presentGift() {
+        if isJourneyComplete {
+            showGiftVoucher = true
+        } else {
+            showGiftLocked = true
+        }
+    }
+
+    private var aiGuideContext: AIGuideContext {
+        let tajChapter = isTajJourney ? tajProgressStore.selectedChapter : nil
+        return AIGuideContext(
+            monumentID: session.installed.package.monument.id,
+            monumentName: session.installed.package.monument.name.v(session.language),
+            checkpointID: tajChapter?.id ?? session.currentCheckpointID,
+            checkpointName: tajChapter?.name ?? session.currentCheckpoint?.name.v(session.language) ?? "this stop",
+            language: session.language
+        )
+    }
+}
+
+private struct DistrictVoucherView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "gift.fill")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(Theme.primary)
+                .frame(width: 72, height: 72)
+                .background(Theme.goldLight.opacity(0.5), in: Circle())
+
+            VStack(spacing: 8) {
+                Text("Hurrah!")
+                    .font(.system(.title, design: .rounded, weight: .bold))
+                    .foregroundStyle(Theme.primary)
+                Text("Hope you had a wonderful experience!")
+                    .font(.headline).foregroundStyle(Theme.ink)
+                Text("Here is a 10% voucher for your next District purchase.")
+                    .font(.subheadline).foregroundStyle(Theme.mutedInk)
+                    .multilineTextAlignment(.center)
+            }
+
+            Button {
+                guard let url = URL(string: "https://www.district.in/") else { return }
+                openURL(url)
+            } label: {
+                Label("Activate Deal", systemImage: "arrow.up.right.square.fill")
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .accessibilityIdentifier("activateDistrictDealButton")
+
+            Button("Not Now") { dismiss() }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.mutedInk)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.surfaceLow)
     }
 }
