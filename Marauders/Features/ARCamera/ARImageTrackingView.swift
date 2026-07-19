@@ -65,16 +65,18 @@ struct ARImageTrackingView: UIViewRepresentable {
 
         private func indexTargets() {
             for checkpoint in parent.session.installed.package.checkpoints {
-                for nugget in checkpoint.nuggets
-                where parent.allowedTargetIDs?.contains(nugget.targetImageId) ?? true {
-                    nuggetByTarget[nugget.targetImageId] = (checkpoint, nugget)
+                for nugget in checkpoint.nuggets {
+                    for targetID in nugget.effectiveTargetImageIds
+                    where parent.allowedTargetIDs?.contains(targetID) ?? true {
+                        nuggetByTarget[targetID] = (checkpoint, nugget)
+                    }
                 }
             }
         }
 
         private func run(on view: ARSCNView) {
             let references = Set(nuggetByTarget.compactMap { targetID, value -> ARReferenceImage? in
-                let url = parent.session.installed.targetURL(for: value.1)
+                let url = parent.session.installed.targetURL(forID: targetID)
                 guard let image = Self.normalizedCGImage(contentsOfFile: url.path) else { return nil }
                 let reference = ARReferenceImage(
                     image, orientation: .up,

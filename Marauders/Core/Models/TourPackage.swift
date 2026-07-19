@@ -44,6 +44,7 @@ struct Nugget: Codable, Identifiable {
     let id: String
     let title: LangMap
     let targetImageId: String
+    let targetImageIds: [String]
     let exclusive: Bool
     let images: [String]
     let text: LangMap
@@ -54,6 +55,7 @@ struct Nugget: Codable, Identifiable {
         id: String,
         title: LangMap,
         targetImageId: String,
+        targetImageIds: [String] = [],
         exclusive: Bool,
         images: [String] = [],
         text: LangMap,
@@ -63,6 +65,7 @@ struct Nugget: Codable, Identifiable {
         self.id = id
         self.title = title
         self.targetImageId = targetImageId
+        self.targetImageIds = targetImageIds
         self.exclusive = exclusive
         self.images = images
         self.text = text
@@ -71,7 +74,7 @@ struct Nugget: Codable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, targetImageId, exclusive, images, text, audio, targetPhysicalWidthM
+        case id, title, targetImageId, targetImageIds, exclusive, images, text, audio, targetPhysicalWidthM
     }
 
     init(from decoder: Decoder) throws {
@@ -79,11 +82,17 @@ struct Nugget: Codable, Identifiable {
         id = try values.decode(String.self, forKey: .id)
         title = try values.decode(LangMap.self, forKey: .title)
         targetImageId = try values.decode(String.self, forKey: .targetImageId)
+        targetImageIds = try values.decodeIfPresent([String].self, forKey: .targetImageIds) ?? []
         exclusive = try values.decode(Bool.self, forKey: .exclusive)
         images = try values.decodeIfPresent([String].self, forKey: .images) ?? []
         text = try values.decode(LangMap.self, forKey: .text)
         audio = try values.decode(LangMap.self, forKey: .audio)
         targetPhysicalWidthM = try values.decodeIfPresent(Double.self, forKey: .targetPhysicalWidthM)
+    }
+
+    var effectiveTargetImageIds: [String] {
+        var seen = Set<String>()
+        return ([targetImageId] + targetImageIds).filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 }
 
@@ -96,7 +105,11 @@ struct InstalledTour {
     }
 
     func targetURL(for nugget: Nugget) -> URL {
-        directory.appendingPathComponent("targets/\(nugget.targetImageId).jpg")
+        targetURL(forID: nugget.targetImageId)
+    }
+
+    func targetURL(forID targetID: String) -> URL {
+        directory.appendingPathComponent("targets/\(targetID).jpg")
     }
 
     func displayURLs(for nugget: Nugget) -> [URL] {

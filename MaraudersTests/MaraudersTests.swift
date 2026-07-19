@@ -79,8 +79,27 @@ struct MaraudersTests {
         #expect(installed.package.checkpoints[0].introAudio.isEmpty)
         #expect(installed.package.checkpoints[0].nuggets[0].audio == ["en": "audio/playable_en.mp3"])
         #expect(installed.package.checkpoints[0].nuggets[0].images.isEmpty)
+        #expect(installed.package.checkpoints[0].nuggets[0].targetImageIds.isEmpty)
         #expect(installed.displayURLs(for: installed.package.checkpoints[0].nuggets[0]) == [installed.targetURL(for: installed.package.checkpoints[0].nuggets[0])])
         #expect(!FileManager.default.fileExists(atPath: installed.targetURL(for: installed.package.checkpoints[0].nuggets[0]).path))
+    }
+
+    @Test @MainActor func alternateTargetIDsDecodeAndSanitizeAdditively() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("target-ids-tour-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("audio"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("targets"), withIntermediateDirectories: true)
+        try Data([0]).write(to: root.appendingPathComponent("audio/playable.mp3"))
+        try Data([0]).write(to: root.appendingPathComponent("targets/left.jpg"))
+        let json = """
+        {"schemaVersion":1,"monument":{"id":"targets","name":{"en":"Targets"},"languages":["en"],"overview":{"en":"Targets"}},"routes":null,"checkpoints":[{"id":"cp","order":0,"name":{"en":"CP"},"mapPosition":{"x":0.5,"y":0.5},"gps":null,"venue":false,"intro":{},"introAudio":{},"nuggets":[{"id":"n","title":{"en":"N"},"targetImageId":"primary","targetImageIds":["primary","left","missing","../escape","a/b","left"],"exclusive":false,"images":[],"text":{"en":"N"},"audio":{"en":"audio/playable.mp3"}}]}]}
+        """
+        try Data(json.utf8).write(to: root.appendingPathComponent("tour.json"))
+
+        let nugget = try PackageStore().decodeAndValidate(directory: root).package.checkpoints[0].nuggets[0]
+        #expect(nugget.targetImageId == "primary")
+        #expect(nugget.targetImageIds == ["left"])
+        #expect(nugget.effectiveTargetImageIds == ["primary", "left"])
     }
 
     @Test @MainActor func galleryPathsAreSanitizedWithoutDroppingNugget() throws {

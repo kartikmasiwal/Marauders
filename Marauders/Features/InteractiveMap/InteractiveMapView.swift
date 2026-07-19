@@ -83,7 +83,7 @@ struct InteractiveMapView: View {
                     onOpenAR: {
                         if let targetID = chapter.arAssetName,
                            let packageCheckpoint = ordered.first(where: { checkpoint in
-                               checkpoint.nuggets.contains { $0.targetImageId == targetID }
+                               checkpoint.nuggets.contains { $0.effectiveTargetImageIds.contains(targetID) }
                            }) {
                             session.select(checkpoint: packageCheckpoint)
                         }

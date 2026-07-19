@@ -26,6 +26,14 @@ struct ARCameraView: View {
         ARImageTrackingConfiguration.isSupported && cameraAuthorized == true && !arFailed
     }
 
+    private var allowedTargetIDs: Set<String>? {
+        guard let routeTargetID else { return nil }
+        let nugget = session.installed.package.checkpoints
+            .flatMap(\.nuggets)
+            .first { $0.effectiveTargetImageIds.contains(routeTargetID) }
+        return Set(nugget?.effectiveTargetImageIds ?? [routeTargetID])
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -79,7 +87,7 @@ struct ARCameraView: View {
             ARImageTrackingView(
                 session: session,
                 isSuppressed: question.suppressesTourAudio,
-                allowedTargetIDs: routeTargetID.map { Set([$0]) },
+                allowedTargetIDs: allowedTargetIDs,
                 snapshotProxy: snapshotProxy,
                 onFound: found,
                 onLost: lost,

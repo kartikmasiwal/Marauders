@@ -145,10 +145,17 @@ final class PackageStore: ObservableObject {
                 guard !audio.isEmpty else { return nil }
                 let images = nugget.images.filter { safeFileExists($0, extension: "webp", in: directory) }
                 let targetID = safePathComponent(nugget.targetImageId) ? nugget.targetImageId : ""
+                var seenTargetIDs = Set<String>()
+                let targetIDs = nugget.targetImageIds.filter {
+                    safePathComponent($0)
+                        && safeFileExists("targets/\($0).jpg", extension: "jpg", in: directory)
+                        && seenTargetIDs.insert($0).inserted
+                }
                 return Nugget(
                     id: nugget.id,
                     title: nugget.title,
                     targetImageId: targetID,
+                    targetImageIds: targetIDs,
                     exclusive: nugget.exclusive,
                     images: images,
                     text: nugget.text,
