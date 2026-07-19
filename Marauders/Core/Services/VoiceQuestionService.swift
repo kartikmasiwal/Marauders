@@ -24,7 +24,9 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
     private var recorder: AVAudioRecorder?
     private var player: AVAudioPlayer?
     private var questionContext: QuestionContext?
+    private var questionURL: URL?
     private var answerURL: URL?
+    private var workTask: Task<Void, Never>?
     private let engine: any AnswerEngine
 
     var suppressesTourAudio: Bool {
@@ -44,7 +46,8 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
         case .idle, .failed:
             questionContext = QuestionContext(checkpointID: checkpointID, monumentID: monumentID, language: language)
             state = .requestingPermission
-            Task { await startRecording() }
+            workTask?.cancel()
+            workTask = Task { await startRecording() }
         case .recording:
             stopAndAsk()
         case .requestingPermission, .thinking, .speaking:
@@ -57,8 +60,27 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
         toggleRecording(checkpointID: checkpointID, monumentID: monumentID, language: language)
     }
 
+    func cancel() {
+        workTask?.cancel()
+        workTask = nil
+        if let url = recorder?.url { try? FileManager.default.removeItem(at: url) }
+        if let questionURL { try? FileManager.default.removeItem(at: questionURL) }
+        questionURL = nil
+        recorder?.stop()
+        recorder = nil
+        player?.stop()
+        player = nil
+        if let answerURL { try? FileManager.default.removeItem(at: answerURL) }
+        answerURL = nil
+        questionContext = nil
+        answerText = nil
+        state = .idle
+        cleanupAudioSession()
+    }
+
     private func startRecording() async {
         let allowed = await AVAudioApplication.requestRecordPermission()
+        guard !Task.isCancelled else { return }
         guard allowed else {
             questionContext = nil
             state = .failed("Microphone access is required to ask the guide a question.")
@@ -69,6 +91,7 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
             try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetoothHFP])
             try session.setActive(true)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("question-\(UUID().uuidString).m4a")
+            questionURL = url
             let settings: [String: Any] = [
                 AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
                 AVSampleRateKey: 16_000,
@@ -97,9 +120,11 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
         guard let recorder, let context = questionContext else { return }
         recorder.stop()
         let url = recorder.url
+        questionURL = url
         self.recorder = nil
         state = .thinking
-        Task {
+        workTask?.cancel()
+        workTask = Task {
             do {
                 let audio = try Data(contentsOf: url).base64EncodedString()
                 let response = try await engine.answer(
@@ -108,14 +133,18 @@ final class VoiceQuestionService: NSObject, ObservableObject, AVAudioRecorderDel
                     monumentId: context.monumentID,
                     lang: context.language
                 )
+                guard !Task.isCancelled else { return }
                 answerText = response.text
                 try play(base64: response.audioBase64)
             } catch {
+                guard !Task.isCancelled else { return }
                 questionContext = nil
                 state = .failed(error.localizedDescription)
                 cleanupAudioSession()
             }
             try? FileManager.default.removeItem(at: url)
+            questionURL = nil
+            workTask = nil
         }
     }
 

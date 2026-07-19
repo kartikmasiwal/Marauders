@@ -4,10 +4,11 @@ import SwiftUI
 import UIKit
 
 struct ARCameraView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var session: TourSession
     @ObservedObject var audioPlayer: NuggetAudioPlayer
     @ObservedObject var ambientPlayer: AmbientAudioPlayer
+    let routeChapterName: String?
+    let routeTargetID: String?
     let onBrowse: () -> Void
     @StateObject private var question = VoiceQuestionService()
     @State private var cameraAuthorized: Bool?
@@ -30,9 +31,9 @@ struct ARCameraView: View {
                     session: session,
                     nugget: nugget,
                     onReplay: { audioPlayer.replay(nugget: nugget, language: session.language, directory: session.installed.directory) },
-                    onClose: { withAnimation(Motion.change(reduceMotion: reduceMotion)) { revealedNugget = nil } }
+                    onClose: { withAnimation(.snappy) { revealedNugget = nil } }
                 )
-                .transition(Motion.subtleTransition(reduceMotion: reduceMotion))
+                .transition(.opacity)
                 .zIndex(2)
             } else if arReady {
                 cameraOverlay.zIndex(1)
@@ -44,33 +45,37 @@ struct ARCameraView: View {
         .onChange(of: question.suppressesTourAudio) { _, suppressed in
             ambientPlayer.setDucked(suppressed, for: .liveQuestion)
         }
-        .onDisappear { ambientPlayer.setDucked(false, for: .liveQuestion) }
+        .onDisappear {
+            question.cancel()
+            ambientPlayer.setDucked(false, for: .liveQuestion)
+        }
     }
 
     @ViewBuilder
     private var cameraLayer: some View {
         if !ARImageTrackingConfiguration.isSupported {
-            browseFallback(title: "AR is unavailable", message: "Use Audio Exp to enjoy every story without the camera.")
+            browseFallback(title: "AR is unavailable", message: "All package stories remain available in Audio Exp. Return to the map to complete chapters.")
         } else if cameraAuthorized == true, !arFailed {
             ARImageTrackingView(
                 session: session,
                 isSuppressed: question.suppressesTourAudio,
+                allowedTargetIDs: routeTargetID.map { Set([$0]) },
                 onFound: found,
                 onLost: lost,
                 onFailure: { arFailed = true }
             )
             .ignoresSafeArea()
-            .clipShape(RoundedRectangle(cornerRadius: revealedNugget == nil || reduceMotion ? 0 : 90, style: .continuous))
-            .scaleEffect(revealedNugget == nil || reduceMotion ? 1 : 0.25, anchor: .topTrailing)
-            .offset(x: revealedNugget == nil || reduceMotion ? 0 : -16, y: revealedNugget == nil || reduceMotion ? 0 : 64)
+            .clipShape(RoundedRectangle(cornerRadius: revealedNugget == nil ? 0 : 90, style: .continuous))
+            .scaleEffect(revealedNugget == nil ? 1 : 0.25, anchor: .topTrailing)
+            .offset(x: revealedNugget == nil ? 0 : -16, y: revealedNugget == nil ? 0 : 64)
             .allowsHitTesting(revealedNugget == nil)
-            .shadow(color: .black.opacity(revealedNugget == nil || reduceMotion ? 0 : 0.32), radius: 14)
-            .animation(reduceMotion ? nil : Motion.standard, value: revealedNugget?.id)
+            .shadow(color: .black.opacity(revealedNugget == nil ? 0 : 0.32), radius: 14)
+            .animation(.snappy, value: revealedNugget?.id)
             .zIndex(revealedNugget == nil ? 0 : 4)
         } else if cameraAuthorized == false {
-            browseFallback(title: "Camera access is off", message: "You can complete the full tour with Audio Exp.", showsSettings: true)
+            browseFallback(title: "Camera access is off", message: "All package stories remain available in Audio Exp. Return to the map to complete chapters.", showsSettings: true)
         } else if arFailed {
-            browseFallback(title: "AR could not start", message: "Continue with the same stories and progress in Audio Exp.")
+            browseFallback(title: "AR could not start", message: "Continue with package stories in Audio Exp, then return to the map to complete this chapter.")
         } else {
             ProgressView("Preparing AR camera…").tint(.white).foregroundStyle(.white)
         }
@@ -81,7 +86,7 @@ struct ARCameraView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("LIVE AR").font(.caption.bold()).tracking(1.3).foregroundStyle(Theme.goldLight)
-                    Text(session.currentCheckpoint?.name.v(session.language) ?? session.installed.package.monument.name.v(session.language))
+                    Text(routeChapterName ?? session.currentCheckpoint?.name.v(session.language) ?? session.installed.package.monument.name.v(session.language))
                         .font(.headline).foregroundStyle(.white)
                 }
                 Spacer()
@@ -159,7 +164,7 @@ struct ARCameraView: View {
         }.allowsHitTesting(false)
     }
 
-    private func browseFallback(title: LocalizedStringKey, message: LocalizedStringKey, showsSettings: Bool = false) -> some View {
+    private func browseFallback(title: String, message: String, showsSettings: Bool = false) -> some View {
         VStack(spacing: 17) {
             Image(systemName: "headphones").font(.system(size: 48)).foregroundStyle(Theme.goldLight)
             Text(title).font(.title2.bold()).foregroundStyle(.white)
@@ -179,17 +184,13 @@ struct ARCameraView: View {
         session.select(checkpoint: checkpoint, nugget: nugget)
         audioPlayer.targetFound(nugget: nugget, language: session.language, directory: session.installed.directory)
         guard revealedNugget?.id != nugget.id else { return }
-        if reduceMotion {
-            withAnimation(Motion.change(reduceMotion: true)) { revealedNugget = nugget }
-            return
-        }
         frozenFrame = frame
         shutterFlash = true
         Task {
             try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled else { return }
             shutterFlash = false
-            withAnimation(Motion.standard) { revealedNugget = nugget }
+            withAnimation(.easeInOut(duration: 0.3)) { revealedNugget = nugget }
             frozenFrame = nil
         }
     }

@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct BookingsView: View {
+    @EnvironmentObject private var packageCatalog: PackageCatalog
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -8,9 +10,16 @@ struct BookingsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
                         header.oneTimeStaggeredReveal(0)
-                        ForEach(MockData.bookings) { booking in TourTicketCard(booking: booking) }
+                        ForEach(MockData.bookings) { booking in
+                            TourTicketCard(
+                                booking: booking,
+                                packageAvailable: packageCatalog.isAvailable(booking.packageID),
+                                locallyAvailable: packageCatalog.isLocallyAvailable(booking.packageID)
+                            )
+                        }
                     }.padding(20)
                 }
+                .refreshable { await packageCatalog.refresh() }
             }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: TourBooking.self) { TourPreparationView(booking: $0) }
@@ -34,29 +43,55 @@ struct BookingsView: View {
 
 private struct TourTicketCard: View {
     let booking: TourBooking
+    let packageAvailable: Bool?
+    let locallyAvailable: Bool
+
+    private var canPrepare: Bool { locallyAvailable || packageAvailable == true }
 
     var body: some View {
         VStack(spacing: 0) {
             Image(booking.imageName).resizable().scaledToFill().frame(height: 165).clipped()
                 .allowsHitTesting(false).accessibilityHidden(true)
                 .overlay(alignment: .topLeading) {
-                    Label(booking.packageAvailable ? "OFFLINE PACKAGE" : "DOWNLOAD AVAILABLE", systemImage: booking.packageAvailable ? "checkmark.icloud.fill" : "arrow.down.circle.fill")
+                    Label(availabilityLabel, systemImage: availabilityIcon)
                         .font(.caption2.bold()).tracking(0.7).foregroundStyle(.white)
-                        .padding(.horizontal, 10).padding(.vertical, 7).background((booking.packageAvailable ? Theme.teal : Theme.gold).opacity(0.92), in: Capsule()).padding(14)
+                        .padding(.horizontal, 10).padding(.vertical, 7).background(availabilityColor.opacity(0.92), in: Capsule()).padding(14)
                 }
             VStack(alignment: .leading, spacing: 12) {
                 Text(booking.name).font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(Theme.ink)
                 Label(booking.city, systemImage: "mappin.and.ellipse")
                 Divider().overlay(Theme.outline.opacity(0.6))
                 NavigationLink(value: booking) {
-                    HStack { Text(booking.packageAvailable ? "Prepare Tour" : "Download Tour").fontWeight(.semibold); Spacer(); Image(systemName: "arrow.down.to.line.compact") }
-                        .foregroundStyle(.white).padding(.horizontal, 18).frame(height: 48).background(Theme.primary, in: RoundedRectangle(cornerRadius: 14))
-                }.accessibilityIdentifier("viewTicket_\(booking.packageID.replacingOccurrences(of: "_", with: "-"))")
+                    HStack { Text(actionLabel).fontWeight(.semibold); Spacer(); Image(systemName: "arrow.down.to.line.compact") }
+                        .foregroundStyle(.white).padding(.horizontal, 18).frame(height: 48).background(canPrepare ? Theme.primary : Theme.outline, in: RoundedRectangle(cornerRadius: 14))
+                }
+                .disabled(!canPrepare)
+                .accessibilityIdentifier("viewTicket_\(booking.packageID.replacingOccurrences(of: "_", with: "-"))")
             }.font(.subheadline).foregroundStyle(Theme.mutedInk).padding(18)
         }
         .background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: 24).stroke(Theme.outline.opacity(0.7)) }
         .shadow(color: Theme.ink.opacity(0.07), radius: 12, y: 6)
+    }
+
+    private var availabilityLabel: String {
+        if locallyAvailable { return "AVAILABLE OFFLINE" }
+        return switch packageAvailable { case true: "PACKAGE AVAILABLE"; case false: "PACKAGE UNAVAILABLE"; case nil: "CHECKING PACKAGE" }
+    }
+
+    private var availabilityIcon: String {
+        if locallyAvailable { return "checkmark.icloud.fill" }
+        return switch packageAvailable { case true: "checkmark.icloud.fill"; case false: "icloud.slash.fill"; case nil: "arrow.triangle.2.circlepath.icloud.fill" }
+    }
+
+    private var availabilityColor: Color {
+        if locallyAvailable { return Theme.teal }
+        return switch packageAvailable { case true: Theme.teal; case false: Theme.mutedInk; case nil: Theme.gold }
+    }
+
+    private var actionLabel: String {
+        if locallyAvailable { return "Prepare Tour" }
+        return switch packageAvailable { case true: "Prepare Tour"; case false: "Tour Unavailable"; case nil: "Checking Availability" }
     }
 }
 

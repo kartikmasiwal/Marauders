@@ -5,17 +5,17 @@ enum MockData {
         TourBooking(
             id: "booking-taj", packageID: "taj_mahal", name: "Taj Mahal",
             city: "Agra, Uttar Pradesh",
-            imageName: "TajMahalMap", packageAvailable: true
+            imageName: "TajMahalMap"
         ),
         TourBooking(
             id: "booking-war", packageID: "national_war_memorial", name: "National War Memorial",
             city: "New Delhi",
-            imageName: "WarMemorialMap", packageAvailable: false
+            imageName: "WarMemorialMap"
         ),
         TourBooking(
             id: "booking-farm", packageID: "zomato_farmhouse", name: "Zomato Farmhouse",
             city: "Gurugram, Haryana",
-            imageName: "ZomatoFarmMap", packageAvailable: false
+            imageName: "ZomatoFarmMap"
         )
     ]
 }

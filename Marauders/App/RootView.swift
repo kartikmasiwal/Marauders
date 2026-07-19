@@ -23,10 +23,11 @@ struct RootView: View {
 
 private struct PreferredTextSizeModifier: ViewModifier {
     let enabled: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if enabled {
+        if enabled, !dynamicTypeSize.isAccessibilitySize {
             content.dynamicTypeSize(.accessibility1)
         } else {
             content

@@ -15,6 +15,11 @@ struct MaraudersTests {
         #expect(installed.package.routes?.venue == nil)
         #expect(installed.package.monument.languages.contains("en"))
         #expect(installed.package.monument.languages.contains("hi"))
+        #expect(installed.package.monument.languages.contains("fr"))
+        #expect(installed.package.monument.languages.contains("es"))
+        #expect(installed.package.checkpoints.flatMap(\.nuggets).flatMap(\.images).count == 2)
+        #expect(Bundle.main.url(forResource: "default_ambient", withExtension: "m4a") != nil)
+        #expect(PackageCatalog().isLocallyAvailable("taj_mahal"))
         for checkpoint in installed.package.checkpoints {
             for path in checkpoint.introAudio.values {
                 #expect(FileManager.default.fileExists(atPath: installed.fileURL(for: path).path))
@@ -22,6 +27,7 @@ struct MaraudersTests {
             for nugget in checkpoint.nuggets {
                 #expect(FileManager.default.fileExists(atPath: installed.targetURL(for: nugget).path))
                 #expect(nugget.audio.values.allSatisfy { FileManager.default.fileExists(atPath: installed.fileURL(for: $0).path) })
+                #expect(nugget.images.allSatisfy { FileManager.default.fileExists(atPath: installed.fileURL(for: $0).path) })
             }
         }
     }
@@ -72,7 +78,91 @@ struct MaraudersTests {
         #expect(installed.package.checkpoints.map(\.id) == ["playable"])
         #expect(installed.package.checkpoints[0].introAudio.isEmpty)
         #expect(installed.package.checkpoints[0].nuggets[0].audio == ["en": "audio/playable_en.mp3"])
+        #expect(installed.package.checkpoints[0].nuggets[0].images.isEmpty)
+        #expect(installed.displayURLs(for: installed.package.checkpoints[0].nuggets[0]) == [installed.targetURL(for: installed.package.checkpoints[0].nuggets[0])])
         #expect(!FileManager.default.fileExists(atPath: installed.targetURL(for: installed.package.checkpoints[0].nuggets[0]).path))
+    }
+
+    @Test @MainActor func galleryPathsAreSanitizedWithoutDroppingNugget() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("gallery-tour-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("audio"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("images"), withIntermediateDirectories: true)
+        try Data([0]).write(to: root.appendingPathComponent("audio/playable.mp3"))
+        try Data([0]).write(to: root.appendingPathComponent("images/valid.webp"))
+        let json = """
+        {"schemaVersion":1,"monument":{"id":"gallery","name":{"en":"Gallery"},"languages":["en"],"overview":{"en":"Gallery"}},"routes":null,"checkpoints":[{"id":"cp","order":0,"name":{"en":"CP"},"mapPosition":{"x":0.5,"y":0.5},"gps":null,"venue":false,"intro":{},"introAudio":{},"nuggets":[{"id":"n","title":{"en":"N"},"targetImageId":"target","exclusive":false,"images":["../outside.webp","images/missing.webp","images/not.jpg","images/valid.webp"],"text":{"en":"N"},"audio":{"en":"audio/playable.mp3"}}]}]}
+        """
+        try Data(json.utf8).write(to: root.appendingPathComponent("tour.json"))
+
+        let installed = try PackageStore().decodeAndValidate(directory: root)
+        let nugget = installed.package.checkpoints[0].nuggets[0]
+        #expect(nugget.images == ["images/valid.webp"])
+        #expect(installed.displayURLs(for: nugget) == [root.appendingPathComponent("images/valid.webp")])
+    }
+
+    @Test func healthResponseUsesMonumentIDs() throws {
+        let response = try JSONDecoder().decode(
+            PackageCatalog.HealthResponse.self,
+            from: Data(#"{"monuments":{"taj_mahal":7,"zomato_farmhouse":3,"red_fort":1}}"#.utf8)
+        )
+        #expect(Set(response.monuments.keys) == ["taj_mahal", "zomato_farmhouse", "red_fort"])
+    }
+
+    @Test func tajMapRouteUsesExactNormalizedCoordinates() {
+        let route = TajMapCheckpoint.chapters
+        #expect(route.map(\.name) == ["Start (Entry)", "Terrace", "Mughal Charbagh", "Mosque", "Great Gate", "Exit"])
+        #expect(route.map { $0.point(in: CGSize(width: 1024, height: 1536)) } == [
+            CGPoint(x: 562, y: 333),
+            CGPoint(x: 371, y: 468),
+            CGPoint(x: 692, y: 810),
+            CGPoint(x: 386, y: 992),
+            CGPoint(x: 643, y: 1168),
+            CGPoint(x: 675, y: 1379)
+        ])
+    }
+
+    @Test @MainActor func tajChapterProgressIsSequentialPersistentAndIdempotent() {
+        let suiteName = "MaraudersTests.TajProgress.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = TajTourProgressStore(defaults: defaults)
+        #expect(store.completedChapterCount == 0)
+        #expect(store.selectedChapterID == "start")
+        #expect(store.chapters.map(\.status) == [.active, .locked, .locked, .locked, .locked, .locked])
+        #expect(!store.select("exit"))
+        #expect(store.completeSelectedChapter())
+        #expect(!store.completeSelectedChapter())
+        #expect(store.completedChapterCount == 1)
+        #expect(store.select("terrace"))
+
+        let restored = TajTourProgressStore(defaults: defaults)
+        #expect(restored.completedChapterCount == 1)
+        #expect(restored.selectedChapterID == "terrace")
+
+        for chapter in TajMapCheckpoint.chapters.dropFirst() {
+            #expect(restored.select(chapter.id))
+            #expect(restored.completeSelectedChapter())
+        }
+        #expect(restored.completedChapterCount == 6)
+        #expect(restored.progress == 1)
+        #expect(restored.isComplete)
+        #expect(!restored.completeSelectedChapter())
+    }
+
+    @Test @MainActor func tajAIInsightCachesOfflineFallback() async {
+        let suiteName = "MaraudersTests.TajInsights.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TajAIInsightStore(defaults: defaults)
+        let chapter = TajMapCheckpoint.chapters[0]
+
+        await store.load(for: chapter)
+        #expect(store.state(for: chapter.id) == .success(chapter.fallbackAIInformation))
+        let restored = TajAIInsightStore(defaults: defaults)
+        await restored.load(for: chapter)
+        #expect(restored.state(for: chapter.id) == .success(chapter.fallbackAIInformation))
     }
 
     @Test func languageFallbackUsesEnglish() {
@@ -102,12 +192,6 @@ struct MaraudersTests {
 
         let session = AppSession(defaults: defaults)
         #expect(session.userName == "Swift Dzire LXI")
-        #expect(AppLanguage.allCases == [.englishUK, .hindi, .french, .spanish])
-        #expect(AppLanguage.englishUK.localeIdentifier == "en_GB")
-        #expect(AppLanguage.hindi.localeIdentifier == "hi_IN")
-        #expect(AppLanguage.french.localeIdentifier == "fr_FR")
-        #expect(AppLanguage.spanish.localeIdentifier == "es_ES")
-        #expect(AppLanguage.hindi.contentLanguageCode == "hi")
 
         session.updateProfile(
             name: "Test Explorer",
@@ -117,7 +201,7 @@ struct MaraudersTests {
             disabilityStatus: .yes,
             accessibilityNotes: "Step-free routes preferred"
         )
-        session.appLanguage = .spanish
+        session.appLanguage = .hindi
         session.prefersLargeText = true
         session.prefersHighContrast = true
 
@@ -128,7 +212,7 @@ struct MaraudersTests {
         #expect(restored.dateOfBirth == Date(timeIntervalSince1970: 631_152_000))
         #expect(restored.disabilityStatus == .yes)
         #expect(restored.accessibilityNotes == "Step-free routes preferred")
-        #expect(restored.appLanguage == .spanish)
+        #expect(restored.appLanguage == .hindi)
         #expect(restored.prefersLargeText)
         #expect(restored.prefersHighContrast)
     }

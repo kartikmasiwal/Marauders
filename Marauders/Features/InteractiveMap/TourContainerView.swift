@@ -4,6 +4,7 @@ import SwiftUI
 struct TourContainerView: View {
     let booking: TourBooking
     @StateObject private var session: TourSession
+    @StateObject private var tajProgressStore: TajTourProgressStore
     @StateObject private var audioPlayer = NuggetAudioPlayer()
     @StateObject private var ambientPlayer = AmbientAudioPlayer()
     @StateObject private var locationService = LocationService()
@@ -15,6 +16,8 @@ struct TourContainerView: View {
     @State private var showAmbientToast = false
     @State private var playedCheckpointIntros = Set<String>()
     @State private var showGiftMessage = false
+
+    private var isTajJourney: Bool { session.installed.package.monument.id == "taj_mahal" }
 
     enum TourTab: String, CaseIterable {
         case map = "Map"
@@ -28,15 +31,12 @@ struct TourContainerView: View {
         var accessibilityID: String {
             switch self { case .map: "map"; case .scan: "scan"; case .info: "info" }
         }
-
-        var localizedTitle: LocalizedStringKey {
-            switch self { case .map: "Map"; case .scan: "AR Exp"; case .info: "Info" }
-        }
     }
 
     init(booking: TourBooking, installed: InstalledTour, language: String) {
         self.booking = booking
         _session = StateObject(wrappedValue: TourSession(installed: installed, language: language))
+        _tajProgressStore = StateObject(wrappedValue: TajTourProgressStore(scopeID: "\(installed.package.monument.id).\(booking.id)"))
     }
 
     private var visits: [VisitedNugget] {
@@ -48,7 +48,7 @@ struct TourContainerView: View {
     }
 
     private var isJourneyComplete: Bool {
-        totalNuggets > 0 && visits.count >= totalNuggets
+        isTajJourney ? tajProgressStore.isComplete : (totalNuggets > 0 && visits.count >= totalNuggets)
     }
 
     var body: some View {
@@ -58,13 +58,23 @@ struct TourContainerView: View {
                 case .map:
                     InteractiveMapView(
                         session: session,
+                        tajProgressStore: tajProgressStore,
+                        audioPlayer: audioPlayer,
+                        ambientPlayer: ambientPlayer,
                         visitedNuggetIDs: Set(visits.map(\.id)),
                         selectedTab: $tab,
                         onBrowse: { showBrowse = true },
                         onSelectCheckpoint: selectCheckpoint
                     )
                 case .scan:
-                    ARCameraView(session: session, audioPlayer: audioPlayer, ambientPlayer: ambientPlayer, onBrowse: { showBrowse = true })
+                    ARCameraView(
+                        session: session,
+                        audioPlayer: audioPlayer,
+                        ambientPlayer: ambientPlayer,
+                        routeChapterName: isTajJourney ? tajProgressStore.selectedChapter?.name : nil,
+                        routeTargetID: isTajJourney ? tajProgressStore.selectedChapter?.arAssetName : nil,
+                        onBrowse: { showBrowse = true }
+                    )
                 case .info:
                     MonumentInfoView(
                         session: session,
@@ -78,7 +88,7 @@ struct TourContainerView: View {
             if showAmbientToast { ambientToast }
         }
         .ignoresSafeArea(edges: .bottom)
-        .safeAreaInset(edge: .top, spacing: 0) { tripProgress }
+        .safeAreaInset(edge: .top, spacing: 0) { isTajJourney ? AnyView(tajTripProgress) : AnyView(tripProgress) }
         .navigationTitle(session.installed.package.monument.name.v(session.language))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
@@ -125,7 +135,7 @@ struct TourContainerView: View {
         }
         .onChange(of: locationService.location) { _, _ in
             if let checkpoint = locationService.nearestCheckpoint(in: session.installed.package.checkpoints) {
-                withAnimation(Motion.change(reduceMotion: reduceMotion)) { session.select(checkpoint: checkpoint) }
+                withAnimation { selectCheckpoint(checkpoint) }
             }
         }
     }
@@ -143,8 +153,6 @@ struct TourContainerView: View {
                 Text("\(completed) of \(totalNuggets) secrets - \(Int(progress * 100))%")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Theme.mutedInk)
-                    .contentTransition(.numericText())
-                    .animation(reduceMotion ? nil : Motion.standard, value: completed)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Trip progress")
@@ -155,7 +163,48 @@ struct TourContainerView: View {
                     .tint(Theme.gold)
                     .scaleEffect(y: 1.6)
                     .padding(.trailing, 16)
-                    .animation(reduceMotion ? nil : Motion.standard, value: progress)
+                    .accessibilityHidden(true)
+                Button { showGiftMessage = true } label: {
+                    Image(systemName: isJourneyComplete ? "gift.fill" : "gift")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(isJourneyComplete ? Theme.primary : Theme.mutedInk)
+                        .frame(width: 44, height: 44)
+                        .background(isJourneyComplete ? Theme.goldLight : Theme.surfaceContainer, in: Circle())
+                        .overlay { Circle().stroke(Theme.gold.opacity(isJourneyComplete ? 0.85 : 0.35), lineWidth: 1.5) }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isJourneyComplete ? "Gift card unlocked" : "Gift card locked")
+                .accessibilityHint(isJourneyComplete ? "Shows your unlocked reward" : "Shows how to unlock the reward")
+            }
+        }
+        .padding(.horizontal, 20).padding(.vertical, 12)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .bottom) { Divider().opacity(0.45) }
+    }
+
+    private var tajTripProgress: some View {
+        let completed = tajProgressStore.completedChapterCount
+        let total = tajProgressStore.totalChapterCount
+        let progress = tajProgressStore.progress
+        let chapter = tajProgressStore.selectedChapter?.name ?? "Start (Entry)"
+
+        return VStack(spacing: 8) {
+            HStack {
+                Label("TRIP PROGRESS", systemImage: "figure.walk")
+                    .font(.caption.bold()).tracking(0.8).foregroundStyle(Theme.primary)
+                Spacer()
+                Text("\(completed) of \(total) chapters - \(Int(progress * 100))%")
+                    .font(.caption.weight(.semibold)).foregroundStyle(Theme.mutedInk)
+            }
+            HStack {
+                Text("Selected stop: \(chapter)").font(.caption.weight(.semibold)).foregroundStyle(Theme.ink)
+                Spacer()
+            }
+            ZStack(alignment: .trailing) {
+                ProgressView(value: progress)
+                    .tint(Theme.gold)
+                    .scaleEffect(y: 1.6)
+                    .padding(.trailing, 16)
                     .accessibilityHidden(true)
                 Button { showGiftMessage = true } label: {
                     Image(systemName: isJourneyComplete ? "gift.fill" : "gift")
@@ -165,15 +214,14 @@ struct TourContainerView: View {
                         .background(isJourneyComplete ? Theme.goldLight : Theme.surfaceContainer, in: Circle())
                         .overlay { Circle().stroke(Theme.gold.opacity(isJourneyComplete ? 0.85 : 0.35), lineWidth: 1.5) }
                 }
-                .buttonStyle(SubtlePressButtonStyle())
-                .animation(reduceMotion ? nil : Motion.quick, value: isJourneyComplete)
+                .buttonStyle(.plain)
                 .accessibilityLabel(isJourneyComplete ? "Gift card unlocked" : "Gift card locked")
-                .accessibilityHint(isJourneyComplete ? "Shows your unlocked reward" : "Shows how to unlock the reward")
             }
         }
-        .padding(.horizontal, 20).padding(.vertical, 12)
+        .padding(.horizontal, 20).padding(.vertical, 10)
         .background(.ultraThinMaterial)
         .overlay(alignment: .bottom) { Divider().opacity(0.45) }
+        .accessibilityIdentifier("tajChapterProgress")
     }
 
     private var ambientToast: some View {
@@ -185,23 +233,26 @@ struct TourContainerView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.top, 10)
             .allowsHitTesting(false)
-            .transition(.move(edge: .top).combined(with: .opacity))
+            .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
     }
 
     private var tourBar: some View {
         HStack {
             ForEach(TourTab.allCases, id: \.self) { item in
-                Button { tab = item } label: {
+                Button {
+                    if reduceMotion { tab = item } else { withAnimation(.snappy) { tab = item } }
+                } label: {
                     VStack(spacing: 4) {
                         Image(systemName: item.icon).font(.system(size: 20, weight: .semibold))
-                        Text(item.localizedTitle).font(.system(size: 10, weight: .bold)).tracking(0.7).textCase(.uppercase)
+                        Text(item.rawValue.uppercased()).font(.system(size: 10, weight: .bold)).tracking(0.7)
                     }
                     .foregroundStyle(tab == item ? Theme.primary : Theme.mutedInk.opacity(0.7))
                     .frame(maxWidth: .infinity).padding(.vertical, 9)
                     .background(tab == item ? Theme.goldLight.opacity(0.28) : .clear, in: Capsule())
-                    .animation(reduceMotion ? nil : Motion.quick, value: tab)
                 }
                 .accessibilityIdentifier("tourTab_\(item.accessibilityID)")
+                .accessibilityLabel(item.rawValue)
+                .accessibilityAddTraits(tab == item ? .isSelected : [])
             }
         }
         .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 24)

@@ -45,8 +45,42 @@ struct Nugget: Codable, Identifiable {
     let title: LangMap
     let targetImageId: String
     let exclusive: Bool
+    let images: [String]
     let text: LangMap
     let audio: LangMap
+
+    init(
+        id: String,
+        title: LangMap,
+        targetImageId: String,
+        exclusive: Bool,
+        images: [String] = [],
+        text: LangMap,
+        audio: LangMap
+    ) {
+        self.id = id
+        self.title = title
+        self.targetImageId = targetImageId
+        self.exclusive = exclusive
+        self.images = images
+        self.text = text
+        self.audio = audio
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, targetImageId, exclusive, images, text, audio
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        title = try values.decode(LangMap.self, forKey: .title)
+        targetImageId = try values.decode(String.self, forKey: .targetImageId)
+        exclusive = try values.decode(Bool.self, forKey: .exclusive)
+        images = try values.decodeIfPresent([String].self, forKey: .images) ?? []
+        text = try values.decode(LangMap.self, forKey: .text)
+        audio = try values.decode(LangMap.self, forKey: .audio)
+    }
 }
 
 struct InstalledTour {
@@ -59,5 +93,10 @@ struct InstalledTour {
 
     func targetURL(for nugget: Nugget) -> URL {
         directory.appendingPathComponent("targets/\(nugget.targetImageId).jpg")
+    }
+
+    func displayURLs(for nugget: Nugget) -> [URL] {
+        let gallery = nugget.images.map(fileURL(for:))
+        return gallery.isEmpty ? [targetURL(for: nugget)] : gallery
     }
 }

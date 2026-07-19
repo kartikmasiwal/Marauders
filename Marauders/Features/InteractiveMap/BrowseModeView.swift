@@ -63,7 +63,7 @@ struct BrowseModeView: View {
             withAnimation(Motion.change(reduceMotion: reduceMotion)) { revealedNugget = nugget }
         } label: {
             HStack(spacing: 14) {
-                NuggetMediaView(url: session.installed.targetURL(for: nugget))
+                NuggetMediaView(url: session.installed.displayURLs(for: nugget).first ?? session.installed.targetURL(for: nugget))
                     .frame(width: 88, height: 88).clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 16)).allowsHitTesting(false)
                 VStack(alignment: .leading, spacing: 7) {
